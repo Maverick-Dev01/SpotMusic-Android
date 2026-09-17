@@ -242,7 +242,9 @@ class AudioEngine {
 
     // 2. Resolve full audio stream if missing or if it is a 30s preview
     const isPreview = !audioUrl || audioUrl.includes('apple.com') || audioUrl.includes('mzstatic') || audioUrl.includes('preview') || track.duration_ms === 30000;
+    let resolutionError: unknown;
     if (isPreview && !track.isLocal) {
+      audioUrl = undefined;
       try {
         const resolved = await streamResolver.resolveFullAudio(track.name, track.artists, track.duration_ms);
         if (resolved) {
@@ -256,6 +258,7 @@ class AudioEngine {
           }
         }
       } catch (err) {
+        resolutionError = err;
         console.warn('Full stream resolver error:', err);
       }
     }
@@ -265,7 +268,9 @@ class AudioEngine {
       return;
     }
     if (!audioUrl) {
-      this.emit('error', new Error('No se pudo encontrar el archivo de audio para reproducir'));
+      this.emit('error', resolutionError instanceof Error
+        ? resolutionError
+        : new Error('No se encontró audio completo para esta canción. Intenta nuevamente.'));
       return;
     }
 

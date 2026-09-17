@@ -13,6 +13,8 @@ import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.File;
+import java.io.FileInputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 
@@ -145,6 +147,59 @@ public class StoragePickerPlugin extends Plugin {
                 call.reject("Error al guardar: " + error.getMessage(), error);
             }
         }).start();
+    }
+
+    @PluginMethod
+    public void copyFile(PluginCall call) {
+        String source = call.getString("source");
+        String filename = call.getString("filename");
+        String savedTree = prefs().getString(TREE_URI, null);
+        if (source == null || filename == null || savedTree == null) {
+            call.reject("Falta el archivo, el nombre o la carpeta de destino");
+            return;
+        }
+        new Thread(() -> {
+            Uri created = null;
+            try {
+                Uri sourceUri = Uri.parse(source);
+                InputStream sourceStream = "content".equals(sourceUri.getScheme())
+                    ? getContext().getContentResolver().openInputStream(sourceUri)
+                    : new FileInputStream(new File(sourceUri.getPath()));
+                if (sourceStream == null) throw new Exception("No se pudo abrir el audio temporal");
+
+                Uri tree = Uri.parse(savedTree);
+                Uri parent = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree));
+                String lowerName = filename.toLowerCase();
+                String mime = lowerName.endsWith(".m4a") ? "audio/mp4"
+                    : lowerName.endsWith(".webm") ? "audio/webm"
+                    : lowerName.endsWith(".ogg") || lowerName.endsWith(".opus") ? "audio/ogg"
+                    : "audio/mpeg";
+                created = DocumentsContract.createDocument(getContext().getContentResolver(), parent, mime, filename);
+                if (created == null) throw new Exception("La carpeta rechazó el archivo");
+
+                long copied = 0L;
+                try (InputStream input = sourceStream;
+                     OutputStream output = getContext().getContentResolver().openOutputStream(created, "w")) {
+                    if (output == null) throw new Exception("No se pudo escribir el archivo");
+                    byte[] buffer = new byte[32768];
+                    int count;
+                    while ((count = input.read(buffer)) != -1) {
+                        output.write(buffer, 0, count);
+                        copied += count;
+                    }
+                }
+                if (copied <= 0) throw new Exception("El archivo copiado está vacío");
+                JSObject result = new JSObject();
+                result.put("uri", created.toString());
+                result.put("size", copied);
+                call.resolve(result);
+            } catch (Exception error) {
+                if (created != null) {
+                    try { DocumentsContract.deleteDocument(getContext().getContentResolver(), created); } catch (Exception ignored) {}
+                }
+                call.reject("Error al guardar: " + error.getMessage(), error);
+            }
+        }, "spotmusic-local-copy").start();
     }
 
     @PluginMethod

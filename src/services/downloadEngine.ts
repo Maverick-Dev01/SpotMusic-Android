@@ -215,7 +215,9 @@ class DownloadEngine {
     }
 
     if (this.isCancelled(task)) return;
-    const ext = url.includes('.mp4') ? 'm4a' : 'mp3';
+    const urlPath = url.split('?')[0].toLowerCase();
+    const knownExtension = urlPath.match(/\.(m4a|mp3|webm|ogg|opus|aac)$/)?.[1];
+    const ext = knownExtension || (urlPath.includes('.mp4') ? 'm4a' : 'mp3');
     const filename = `${track.artists.slice(0, 60)} - ${track.name.slice(0, 80)} - ${track.id}.${ext}`.replace(/[\/\\?%*:|"<>]/g, '_');
     const relPath = `${this.downloadFolder}/${filename}`;
     let localPath = '';
@@ -228,7 +230,12 @@ class DownloadEngine {
       if (Capacitor.isNativePlatform()) {
         const customDirectory = await storagePicker.getDirectory();
         let fileSize = 0;
-        if (customDirectory.selected) {
+        const isLocalResolvedFile = url.startsWith('file://') || url.startsWith('content://');
+        if (customDirectory.selected && isLocalResolvedFile) {
+          const result = await storagePicker.copyFile(url, filename);
+          localPath = result.uri;
+          fileSize = result.size;
+        } else if (customDirectory.selected) {
           const result = await storagePicker.downloadFile(url, filename, percent => {
             if (!this.isCancelled(task)) {
               task.percent = Math.max(30, Math.min(80, 30 + Math.round(percent * 0.5)));
@@ -237,6 +244,14 @@ class DownloadEngine {
           });
           localPath = result.uri;
           fileSize = result.size;
+        } else if (isLocalResolvedFile) {
+          try {
+            await Filesystem.mkdir({ path: this.downloadFolder, directory: Directory.Documents, recursive: true });
+          } catch {}
+          const result = await Filesystem.copy({ from: url, to: relPath, toDirectory: Directory.Documents });
+          localPath = result.uri;
+          const stat = await Filesystem.stat({ path: relPath, directory: Directory.Documents });
+          fileSize = stat.size;
         } else {
           const result = await Filesystem.downloadFile({ url, path: relPath, directory: Directory.Documents, recursive: true });
           if (!result.path) throw new Error('No se pudo guardar el archivo en el dispositivo');

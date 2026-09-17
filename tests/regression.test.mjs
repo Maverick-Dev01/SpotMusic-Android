@@ -103,6 +103,21 @@ test('clearing the queue cancels an unresolved play request', async () => {
   assert.equal(played, false);
 });
 
+test('a 30-second preview is never played when full audio resolution fails', async () => {
+  const engine = audio(async () => null);
+  let error;
+  engine.on('error', value => { error = value; });
+  await engine.playTrack({
+    id: 'preview',
+    name: 'Full song',
+    artists: 'Artist',
+    duration_ms: 30000,
+    audio_url: 'https://audio-ssl.itunes.apple.com/preview.m4a'
+  });
+  assert.match(error.message, /audio completo/i);
+  assert.equal(engine.isPlaying, false);
+});
+
 test('phone-safe audio profile is the default and device profiles persist', () => {
   const values = new Map();
   const engine = load('src/services/audioEngine.ts', {

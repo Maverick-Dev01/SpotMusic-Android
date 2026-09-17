@@ -120,12 +120,8 @@ export class SettingsModal {
               </span>
               <span id="settings-spotify-status" class="px-2.5 py-0.5 rounded-full font-bold text-[10px] bg-white/10 text-white/60">Sin configurar</span>
             </div>
-            <p class="text-[10px] leading-relaxed text-white/45">La conexión oficial permite recorrer todas las páginas disponibles de una playlist. Registra <span class="font-mono text-white/70">spotmusic-login://callback</span> como Redirect URI.</p>
-            <input id="settings-spotify-client-id" type="text" autocomplete="off" spellcheck="false" placeholder="Spotify Client ID" class="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white font-mono text-[11px] placeholder:text-white/30 focus:outline-none focus:border-sonic-green transition-all" />
-            <div class="grid grid-cols-2 gap-2">
-              <button id="btn-settings-save-spotify" class="py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white font-semibold text-xs active:scale-95 transition-all">Guardar Client ID</button>
-              <button id="btn-settings-connect-spotify" class="py-2 rounded-xl bg-sonic-green text-black font-bold text-xs active:scale-95 transition-all">Conectar Spotify</button>
-            </div>
+            <p class="text-[10px] leading-relaxed text-white/45">Conecta tu cuenta para importar playlists completas. La aplicación usa autorización segura PKCE y nunca guarda el Client Secret.</p>
+            <button id="btn-settings-connect-spotify" class="w-full py-2 rounded-xl bg-sonic-green text-black font-bold text-xs active:scale-95 transition-all">Conectar Spotify</button>
           </div>
 
           <!-- SECTION 4: SALIDA DE AUDIO -->
@@ -231,17 +227,6 @@ export class SettingsModal {
     });
 
     document.getElementById('btn-close-settings')?.addEventListener('click', () => this.close());
-
-    document.getElementById('btn-settings-save-spotify')?.addEventListener('click', async () => {
-      const input = document.getElementById('settings-spotify-client-id') as HTMLInputElement;
-      try {
-        spotifyAuth.setClientId(input?.value || '');
-        this.refreshSpotifyUI();
-        await appDialog.alert('Client ID guardado. Ahora conecta tu cuenta de Spotify.');
-      } catch (error: any) {
-        await appDialog.alert(error.message || 'No se pudo guardar el Client ID.');
-      }
-    });
 
     document.getElementById('btn-settings-connect-spotify')?.addEventListener('click', async () => {
       if (spotifyAuth.connected) {
@@ -577,10 +562,8 @@ export class SettingsModal {
   }
 
   private refreshSpotifyUI() {
-    const input = document.getElementById('settings-spotify-client-id') as HTMLInputElement | null;
     const badge = document.getElementById('settings-spotify-status');
     const button = document.getElementById('btn-settings-connect-spotify');
-    if (input && document.activeElement !== input) input.value = spotifyAuth.clientId;
     if (badge) {
       badge.textContent = spotifyAuth.connected ? 'Conectado ✓' : spotifyAuth.configured ? 'Listo para conectar' : 'Sin configurar';
       badge.className = spotifyAuth.connected

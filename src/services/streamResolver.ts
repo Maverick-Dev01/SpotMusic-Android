@@ -1,12 +1,13 @@
 import { CapacitorHttp } from '@capacitor/core';
 import CryptoJS from 'crypto-js';
+import { resolveNativeAudio } from './nativeAudioResolver';
 
 export interface ResolvedAudio {
   audioUrl: string;
   durationMs: number;
   durationStr: string;
   format: string;
-  source: 'jiosaavn' | 'soundcloud' | 'fallback';
+  source: 'jiosaavn' | 'soundcloud' | 'native' | 'fallback';
   coverUrl?: string;
   title?: string;
   artist?: string;
@@ -305,12 +306,15 @@ class StreamResolver {
       console.warn('Fast parallel stream resolution notice:', e);
     }
 
-    // Ultimate fallback if offline or no network
-    const fallback = await this.resolveFallbackPreview(cleanT, artist);
-    if (fallback) {
-      this.cache.set(cacheKey, fallback);
+    // Match the desktop application when the fast catalog sources do not resolve:
+    // download the full audio through the native yt-dlp runtime and play it locally.
+    // A 30-second preview is intentionally not returned as if it were a full track.
+    const native = await resolveNativeAudio(cleanT, artist, expectedDurationMs);
+    if (native) {
+      this.cache.set(cacheKey, native);
+      return native;
     }
-    return fallback;
+    return null;
   }
 }
 

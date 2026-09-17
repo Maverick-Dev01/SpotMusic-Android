@@ -12,6 +12,7 @@ interface StoragePickerPlugin {
   getDirectory(): Promise<StorageDirectoryInfo>;
   useDefaultDirectory(): Promise<StorageDirectoryInfo>;
   downloadFile(options: { url: string; filename: string }): Promise<{ uri: string; size: number }>;
+  copyFile(options: { source: string; filename: string }): Promise<{ uri: string; size: number }>;
   deleteFile(options: { uri: string }): Promise<void>;
   addListener(eventName: 'downloadProgress', listener: (event: { downloaded: number; total: number; percent: number }) => void): Promise<PluginListenerHandle>;
 }
@@ -36,6 +37,9 @@ class StoragePickerClient {
     } finally {
       await listener?.remove();
     }
+  }
+  async copyFile(source: string, filename: string) {
+    return NativeStoragePicker.copyFile({ source, filename });
   }
   async deleteFile(uri: string) {
     if (this.available && uri) await NativeStoragePicker.deleteFile({ uri });
