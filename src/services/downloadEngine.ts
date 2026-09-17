@@ -77,17 +77,52 @@ class DownloadEngine {
     }
   }
 
+  public async addBatchDownloads(tracks: Track[]): Promise<number> {
+    const license = await licenseClient.checkLicense();
+    if (!license.valid) {
+      throw new Error('Se requiere una clave de KeyForge activa para descargar playlists completas. Toca en Licencia arriba para activar.');
+    }
+
+    let queuedCount = 0;
+    for (const track of tracks) {
+      const added = await this.addDownload(track);
+      if (added) queuedCount++;
+    }
+    return queuedCount;
+  }
+
   private async executeDownload(task: DownloadTask) {
     task.status = 'downloading';
     task.percent = 10;
     this.notify();
 
     const track = task.track;
-    const url = track.audio_url || track.preview_url;
+    let url = track.audio_url || track.preview_url;
+
+    // Automatic stream resolution fallback if missing
+    if (!url) {
+      try {
+        const query = encodeURIComponent(`${track.name} ${track.artists}`);
+        const itRes = await fetch(`https://itunes.apple.com/search?term=${query}&media=music&limit=1`);
+        if (itRes.ok) {
+          const itData = await itRes.json();
+          if (itData.results && itData.results.length > 0) {
+            url = itData.results[0].previewUrl;
+            track.audio_url = url || undefined;
+            track.preview_url = url || undefined;
+            if (!track.cover_url && itData.results[0].artworkUrl100) {
+              track.cover_url = itData.results[0].artworkUrl100.replace('100x100bb', '600x600bb');
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Fallback stream lookup error:', err);
+      }
+    }
 
     if (!url) {
       task.status = 'error';
-      task.error = 'No se encontró enlace de descarga para este tema';
+      task.error = 'No se encontró archivo de audio para este tema';
       this.notify();
       return;
     }

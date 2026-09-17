@@ -1,3 +1,4 @@
+import { CapacitorHttp } from '@capacitor/core';
 import { Track, Playlist } from '../types';
 
 export interface SearchResults {
@@ -6,22 +7,132 @@ export interface SearchResults {
   playlists: any[];
 }
 
+export interface SpotifyPlaylistResult {
+  id: string;
+  type: 'playlist' | 'album' | 'track';
+  name: string;
+  description: string;
+  cover_url: string;
+  owner: string;
+  total_tracks: number;
+  tracks: Track[];
+}
+
 class SpotifyClient {
   private itunesCache: Map<string, string> = new Map();
 
+  // Extract Spotify info from URL or URI
+  public extractSpotifyInfo(input: string): { type: 'playlist' | 'album' | 'track'; id: string } | null {
+    if (!input || typeof input !== 'string') return null;
+    const clean = input.trim();
+
+    // Match playlist: /playlist/{id} or spotify:playlist:{id}
+    const plMatch = clean.match(/playlist[\/:]([a-zA-Z0-9]+)/);
+    if (plMatch) return { type: 'playlist', id: plMatch[1] };
+
+    // Match album: /album/{id} or spotify:album:{id}
+    const albMatch = clean.match(/album[\/:]([a-zA-Z0-9]+)/);
+    if (albMatch) return { type: 'album', id: albMatch[1] };
+
+    // Match track: /track/{id} or spotify:track:{id}
+    const trMatch = clean.match(/track[\/:]([a-zA-Z0-9]+)/);
+    if (trMatch) return { type: 'track', id: trMatch[1] };
+
+    // Raw 22-character Spotify ID
+    if (/^[a-zA-Z0-9]{22}$/.test(clean)) {
+      return { type: 'playlist', id: clean };
+    }
+
+    return null;
+  }
+
+  // Fetch Spotify Playlist / Album / Track directly from public embed
+  public async fetchSpotifyEntity(inputUrl: string): Promise<SpotifyPlaylistResult> {
+    const info = this.extractSpotifyInfo(inputUrl);
+    if (!info) {
+      throw new Error('El enlace no es válido. Ingresa un enlace de Spotify (ej: https://open.spotify.com/playlist/...)');
+    }
+
+    const embedUrl = `https://open.spotify.com/embed/${info.type}/${info.id}`;
+    let html = '';
+
+    try {
+      // Use native CapacitorHttp to bypass any CORS restrictions on Android
+      const res = await CapacitorHttp.get({
+        url: embedUrl,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8'
+        }
+      });
+      html = typeof res.data === 'string' ? res.data : JSON.stringify(res.data);
+    } catch (httpErr) {
+      // Fallback to fetch
+      const r = await fetch(embedUrl);
+      html = await r.text();
+    }
+
+    const match = html.match(/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/s);
+    if (!match) {
+      throw new Error('No se pudieron extraer los datos de Spotify. Asegúrate de que la playlist sea pública.');
+    }
+
+    let parsed: any;
+    try {
+      parsed = JSON.parse(match[1]);
+    } catch (e: any) {
+      throw new Error('Error al decodificar la información de Spotify: ' + e.message);
+    }
+
+    const entity = parsed.props?.pageProps?.state?.data?.entity;
+    if (!entity) {
+      throw new Error('No se encontró información para este enlace de Spotify.');
+    }
+
+    const coverUrl = entity.coverArt?.sources?.[0]?.url || entity.visualIdentity?.image?.[0]?.url || '';
+    const trackList = entity.trackList || (entity.tracks ? entity.tracks.items : []) || [];
+
+    const tracks: Track[] = trackList.map((t: any, idx: number) => {
+      const trackId = t.id || (t.uri ? t.uri.split(':')[2] : null) || `sp-${info.id}-${idx}`;
+      const durMs = t.duration || t.duration_ms || 180000;
+      const mins = Math.floor(durMs / 60000);
+      const secs = Math.floor((durMs % 60000) / 1000);
+
+      const artistName = t.subtitle || (t.artists ? (Array.isArray(t.artists) ? t.artists.map((a: any) => a.name).join(', ') : t.artists) : 'Desconocido');
+      const trackName = t.title || t.name || 'Canción sin título';
+      const preview = t.audioPreview?.url || t.preview_url || null;
+
+      return {
+        id: `spotify-${trackId}`,
+        name: trackName,
+        artists: artistName,
+        album: entity.name || entity.title || 'Spotify Playlist',
+        duration_ms: durMs,
+        duration_str: `${mins}:${secs.toString().padStart(2, '0')}`,
+        cover_url: t.thumbnail || coverUrl,
+        preview_url: preview,
+        audio_url: preview,
+        format: 'MP3'
+      };
+    });
+
+    return {
+      id: info.id,
+      type: info.type,
+      name: entity.name || entity.title || 'Playlist de Spotify',
+      description: entity.subtitle || entity.description || '',
+      cover_url: coverUrl,
+      owner: (entity.authors && entity.authors[0]?.name) || 'Spotify',
+      total_tracks: tracks.length,
+      tracks
+    };
+  }
+
   // Clean Spotify / YouTube URLs
   public parseUrl(url: string): { type: 'playlist' | 'album' | 'track' | null; id: string | null } {
-    try {
-      const u = new URL(url);
-      const parts = u.pathname.split('/').filter(Boolean);
-      if (parts.length >= 2) {
-        const type = parts[0] as 'playlist' | 'album' | 'track';
-        const id = parts[1].split('?')[0];
-        if (['playlist', 'album', 'track'].includes(type)) {
-          return { type, id };
-        }
-      }
-    } catch (e) {}
+    const info = this.extractSpotifyInfo(url);
+    if (info) return info;
     return { type: null, id: null };
   }
 
@@ -52,10 +163,30 @@ class SpotifyClient {
     return '';
   }
 
-  // Search catalog across iTunes and open audio databases
+  // Search catalog across iTunes and open audio databases, or auto-fetch Spotify links
   public async search(query: string): Promise<SearchResults> {
     const q = query.trim();
     if (!q) return { tracks: [], albums: [], playlists: [] };
+
+    // Auto-detect Spotify playlist / album links
+    if (q.includes('spotify.com') || q.startsWith('spotify:')) {
+      try {
+        const sp = await this.fetchSpotifyEntity(q);
+        return {
+          tracks: sp.tracks,
+          albums: [],
+          playlists: [{
+            id: sp.id,
+            name: sp.name,
+            owner: sp.owner,
+            cover_url: sp.cover_url,
+            trackCount: sp.total_tracks
+          }]
+        };
+      } catch (err) {
+        console.warn('Spotify direct link auto-fetch warning:', err);
+      }
+    }
 
     try {
       const encoded = encodeURIComponent(q);

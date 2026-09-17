@@ -27,27 +27,35 @@ export class LicenseModal {
         </div>
 
         <!-- License Status Card -->
-        <div class="bg-obsidian-900/80 rounded-2xl p-3.5 border border-white/5 space-y-2">
+        <div class="bg-obsidian-900/80 rounded-2xl p-3.5 border border-white/5 space-y-2.5">
           <div class="flex items-center justify-between text-xs">
             <span class="text-white/50">Estado:</span>
-            <span id="license-status-badge" class="px-2 py-0.5 rounded-full font-semibold text-[10px] bg-yellow-500/20 text-yellow-400">Sin Licencia</span>
+            <span id="license-status-badge" class="px-2.5 py-0.5 rounded-full font-bold text-[10px] bg-yellow-500/20 text-yellow-400">Sin Licencia</span>
           </div>
           <div class="flex items-center justify-between text-xs">
             <span class="text-white/50">Titular:</span>
             <span id="license-client-name" class="font-medium text-white/80">--</span>
           </div>
-          <div class="flex items-center justify-between text-xs">
+          <div class="flex items-center justify-between text-xs pt-1 border-t border-white/5">
             <span class="text-white/50">Device ID:</span>
-            <span id="license-device-id" class="font-mono text-[10px] text-white/60 select-all truncate max-w-[170px]">Cargando...</span>
+            <div class="flex items-center gap-1.5">
+              <span id="license-device-id" class="font-mono text-[10px] text-sonic-green select-all truncate max-w-[140px]">Cargando...</span>
+              <button id="btn-copy-device-id" class="px-2 py-0.5 rounded-md bg-white/10 hover:bg-white/15 text-[10px] font-semibold text-white/80 flex items-center gap-1 active:scale-95 transition-all">
+                <span id="copy-device-id-text">Copiar</span>
+              </button>
+            </div>
           </div>
         </div>
 
         <!-- Token Input -->
         <div class="space-y-2">
-          <label class="text-xs font-semibold text-white/70">Ingresa tu clave de licencia:</label>
-          <input type="text" id="input-license-token" placeholder="KF-XXXX-XXXX-XXXX" class="w-full px-3.5 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white font-mono text-xs placeholder:text-white/30 focus:outline-none focus:border-sonic-emerald transition-all uppercase" />
-          <button id="btn-activate-token" class="w-full py-2.5 rounded-xl bg-sonic-emerald hover:bg-emerald-400 text-black font-bold text-xs transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-500/20">
+          <label class="text-xs font-semibold text-white/70">Ingresa tu clave de licencia KeyForge:</label>
+          <textarea id="input-license-token" rows="2" placeholder="Pega aquí la clave o token copiado de KeyForge..." class="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white font-mono text-[11px] placeholder:text-white/30 focus:outline-none focus:border-sonic-green transition-all resize-none"></textarea>
+          <button id="btn-activate-token" class="w-full py-2.5 rounded-xl bg-sonic-green hover:bg-emerald-400 text-black font-bold text-xs transition-all flex items-center justify-center gap-1.5 shadow-lg shadow-green-500/20 active:scale-95">
             <span>Activar Licencia</span>
+          </button>
+          <button id="btn-remove-license" class="hidden w-full py-2 rounded-xl bg-white/5 hover:bg-white/10 text-red-400 font-semibold text-xs transition-all active:scale-95">
+            <span>Desvincular Licencia</span>
           </button>
         </div>
       </div>
@@ -62,14 +70,35 @@ export class LicenseModal {
       if (e.target === this.overlay) this.close();
     });
 
+    document.getElementById('btn-copy-device-id')?.addEventListener('click', async () => {
+      const devId = await licenseClient.getDeviceId();
+      await navigator.clipboard.writeText(devId);
+      const textSpan = document.getElementById('copy-device-id-text');
+      if (textSpan) {
+        textSpan.textContent = '¡Copiado! ✓';
+        setTimeout(() => {
+          if (textSpan) textSpan.textContent = 'Copiar';
+        }, 2000);
+      }
+    });
+
+    document.getElementById('btn-remove-license')?.addEventListener('click', () => {
+      if (confirm('¿Deseas desvincular la licencia actual de este dispositivo?')) {
+        licenseClient.removeLicense();
+        const input = document.getElementById('input-license-token') as HTMLTextAreaElement;
+        if (input) input.value = '';
+        this.refreshUI();
+      }
+    });
+
     document.getElementById('btn-close-license')?.addEventListener('click', () => this.close());
 
     document.getElementById('btn-activate-token')?.addEventListener('click', async () => {
-      const input = document.getElementById('input-license-token') as HTMLInputElement;
+      const input = document.getElementById('input-license-token') as HTMLTextAreaElement;
       const btn = document.getElementById('btn-activate-token') as HTMLButtonElement;
       const token = input?.value.trim() || '';
 
-      if (!token) return alert('Escribe tu token de licencia');
+      if (!token) return alert('Escribe o pega tu clave de licencia');
 
       btn.disabled = true;
       btn.innerHTML = '<span class="w-3.5 h-3.5 rounded-full border-2 border-black border-t-transparent animate-spin"></span>';
@@ -99,19 +128,24 @@ export class LicenseModal {
     const badge = document.getElementById('license-status-badge');
     const clientName = document.getElementById('license-client-name');
     const devIdSpan = document.getElementById('license-device-id');
+    const removeBtn = document.getElementById('btn-remove-license');
 
     if (devIdSpan) devIdSpan.textContent = devId;
     if (clientName) clientName.textContent = info.clientName || 'Sin Registrar';
 
+    if (removeBtn) {
+      removeBtn.classList.toggle('hidden', !info.valid);
+    }
+
     if (badge) {
       if (info.valid) {
-        badge.className = 'px-2 py-0.5 rounded-full font-semibold text-[10px] bg-sonic-green/20 text-sonic-green border border-sonic-green/30';
+        badge.className = 'px-2.5 py-0.5 rounded-full font-bold text-[10px] bg-sonic-green/20 text-sonic-green border border-sonic-green/30';
         badge.textContent = 'Activa ✓';
       } else if (info.status === 'revoked') {
-        badge.className = 'px-2 py-0.5 rounded-full font-semibold text-[10px] bg-red-500/20 text-red-400 border border-red-500/30';
+        badge.className = 'px-2.5 py-0.5 rounded-full font-bold text-[10px] bg-red-500/20 text-red-400 border border-red-500/30';
         badge.textContent = 'Revocada ✗';
       } else {
-        badge.className = 'px-2 py-0.5 rounded-full font-semibold text-[10px] bg-yellow-500/20 text-yellow-400 border border-yellow-500/30';
+        badge.className = 'px-2.5 py-0.5 rounded-full font-bold text-[10px] bg-yellow-500/20 text-yellow-400 border border-yellow-500/30';
         badge.textContent = 'Sin Licencia';
       }
     }

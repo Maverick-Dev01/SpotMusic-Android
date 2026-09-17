@@ -147,7 +147,27 @@ class AudioEngine {
 
     let audioUrl = track.audio_url || track.preview_url || track.localPath;
     if (!audioUrl) {
-      this.emit('error', new Error('No hay URL de audio para reproducir'));
+      try {
+        const query = encodeURIComponent(`${track.name} ${track.artists}`);
+        const itRes = await fetch(`https://itunes.apple.com/search?term=${query}&media=music&limit=1`);
+        if (itRes.ok) {
+          const itData = await itRes.json();
+          if (itData.results && itData.results.length > 0) {
+            audioUrl = itData.results[0].previewUrl;
+            track.audio_url = audioUrl || undefined;
+            track.preview_url = audioUrl || undefined;
+            if (!track.cover_url && itData.results[0].artworkUrl100) {
+              track.cover_url = itData.results[0].artworkUrl100.replace('100x100bb', '600x600bb');
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Playback stream lookup error:', err);
+      }
+    }
+
+    if (!audioUrl) {
+      this.emit('error', new Error('No se pudo encontrar el archivo de audio para reproducir'));
       return;
     }
 

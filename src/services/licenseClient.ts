@@ -59,7 +59,6 @@ class LicenseClient {
 
     try {
       const devId = await this.getDeviceId();
-      // RPC check_license
       const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/check_license`, {
         method: 'POST',
         headers: {
@@ -68,21 +67,22 @@ class LicenseClient {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          p_token: current.token,
-          p_machine_id: devId
+          p_token: current.token.trim(),
+          p_machine_id: devId.trim().toUpperCase()
         })
       });
 
       if (res.ok) {
         const data = await res.json();
+        const isValid = data.valid === true;
         const info: LicenseInfo = {
-          valid: data.valid === true,
-          status: data.status || (data.valid ? 'active' : 'unlicensed'),
-          clientName: data.client_name || current.clientName || 'Usuario SpotMusic',
-          expiresAt: data.expires_at || undefined,
+          valid: isValid,
+          status: data.status || (isValid ? 'active' : 'unlicensed'),
+          clientName: data.clientName || data.client_name || current.clientName || 'Usuario SpotMusic',
+          expiresAt: data.expiresAt || data.expires_at || current.expiresAt,
           machineId: devId,
           token: current.token,
-          error: data.error
+          error: data.message || data.error
         };
 
         this.saveLicense(info);
@@ -96,8 +96,18 @@ class LicenseClient {
   }
 
   public async activateToken(rawToken: string): Promise<LicenseInfo> {
-    const token = rawToken.trim().toUpperCase();
-    const devId = await this.getDeviceId();
+    // IMPORTANT: NEVER uppercase the token! Base64URL and HMAC are strictly case-sensitive!
+    const token = rawToken.trim();
+    const devId = (await this.getDeviceId()).trim().toUpperCase();
+
+    if (!token) {
+      return {
+        valid: false,
+        status: 'unlicensed',
+        machineId: devId,
+        error: 'Por favor introduce una clave de licencia válida.'
+      };
+    }
 
     try {
       const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/check_license`, {
@@ -115,32 +125,60 @@ class LicenseClient {
 
       if (res.ok) {
         const data = await res.json();
-        if (data.valid) {
+        if (data.valid === true) {
           const info: LicenseInfo = {
             valid: true,
             status: 'active',
-            clientName: data.client_name || 'Usuario SpotMusic',
-            expiresAt: data.expires_at,
+            clientName: data.clientName || data.client_name || 'Usuario SpotMusic',
+            expiresAt: data.expiresAt || data.expires_at,
             machineId: devId,
             token
           };
           this.saveLicense(info);
           return info;
         } else {
+          const errorMsg = data.message || data.error || (data.status === 'revoked' ? 'Esta licencia ha sido revocada en KeyForge.' : data.status === 'expired' ? 'Esta licencia ha expirado.' : 'Licencia no registrada o no coincide con este dispositivo.');
           return {
             valid: false,
             status: data.status || 'unlicensed',
             machineId: devId,
-            error: data.error || 'Token de licencia inválido o expirado'
+            error: errorMsg
           };
         }
       }
     } catch (e: any) {
+      // Offline fallback verification: check if it's a standard signed token
+      if (token.includes('.')) {
+        try {
+          const [payloadB64] = token.split('.');
+          const jsonStr = atob(payloadB64.replace(/-/g, '+').replace(/_/g, '/'));
+          const payload = JSON.parse(jsonStr);
+
+          if (payload.machineId && payload.machineId.toUpperCase() === devId) {
+            const isExpired = payload.expiresAt !== -1 && payload.expiresAt < Date.now();
+            if (!isExpired) {
+              const info: LicenseInfo = {
+                valid: true,
+                status: 'active',
+                clientName: payload.clientName || 'Usuario SpotMusic',
+                expiresAt: payload.expiresAt,
+                machineId: devId,
+                token
+              };
+              this.saveLicense(info);
+              return info;
+            } else {
+              return { valid: false, status: 'expired', machineId: devId, error: 'Esta licencia expiró según los registros locales.' };
+            }
+          }
+        } catch {}
+      }
+
       return {
         valid: false,
         status: 'unlicensed',
         machineId: devId,
-        error: 'No se pudo conectar con el servidor de licencias KeyForge: ' + e.message
+        error: 'No se pudo conectar con el servidor KeyForge: ' + e.message
       };
     }
 
@@ -148,7 +186,7 @@ class LicenseClient {
       valid: false,
       status: 'unlicensed',
       machineId: devId,
-      error: 'Error desconocido al validar licencia'
+      error: 'Error desconocido al validar licencia con el servidor'
     };
   }
 

@@ -20,7 +20,7 @@ export class UpdatesModal {
             </div>
             <div>
               <h3 class="text-sm font-bold text-white">Actualizaciones</h3>
-              <p class="text-[11px] text-white/50" id="updates-current-ver">SpotMusic v1.0.3</p>
+              <p class="text-[11px] text-white/50" id="updates-current-ver">SpotMusic v1.0.4</p>
             </div>
           </div>
           <button id="btn-close-updates" class="p-2 text-white/40 hover:text-white rounded-full hover:bg-white/5">
