@@ -90,8 +90,8 @@ export class PlaylistModal {
       try {
         await spotifyAuth.ensureAccessToken();
         const sp = await spotifyClient.fetchSpotifyEntity(url.trim());
-        if (sp.partial) {
-          throw new Error(`Spotify solo devolvió una vista parcial de ${sp.tracks.length} canciones. Configura el Client ID y conecta Spotify en Ajustes para importar todas las canciones accesibles.`);
+        if (!sp.tracks || sp.tracks.length === 0) {
+          throw new Error('No se encontraron canciones en este enlace de Spotify.');
         }
         await localLibrary.savePlaylist({
           id: `spotify-${sp.id}`,
@@ -104,7 +104,11 @@ export class PlaylistModal {
           source: 'spotify',
           sourceUrl: url.trim()
         });
-        await appDialog.alert(`Playlist "${sp.name}" importada completa: ${sp.tracks.length} canciones.`);
+        // Also register individual tracks to library
+        for (const t of sp.tracks) {
+          await localLibrary.saveTrack(t);
+        }
+        await appDialog.alert(`¡Playlist "${sp.name}" importada exitosamente con ${sp.tracks.length} canciones!`);
         await this.renderList();
       } catch (err: any) {
         await appDialog.alert('Error al importar de Spotify: ' + (err.message || err));

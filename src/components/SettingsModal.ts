@@ -118,10 +118,10 @@ export class SettingsModal {
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" class="text-sonic-green"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.52 17.34c-.24.36-.66.48-1.02.24-2.82-1.74-6.36-2.1-10.56-1.14-.42.12-.78-.18-.9-.54-.12-.42.18-.78.54-.9 4.56-1.02 8.52-.6 11.64 1.32.42.18.48.66.3 1.02zm1.44-3.3c-.3.42-.84.6-1.26.3-3.24-1.98-8.16-2.58-11.94-1.38-.48.12-1.02-.12-1.14-.6-.12-.48.12-1.02.6-1.14C9.6 9.9 15 10.56 18.72 12.84c.36.18.54.78.24 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.3c-.6.18-1.2-.18-1.38-.72-.18-.6.18-1.2.72-1.38 4.26-1.26 11.28-1.02 15.72 1.62.54.3.72 1.02.42 1.56-.3.42-1.02.6-1.56.3z"/></svg>
                 <span>Importación de Spotify</span>
               </span>
-              <span id="settings-spotify-status" class="px-2.5 py-0.5 rounded-full font-bold text-[10px] bg-white/10 text-white/60">Sin configurar</span>
+              <span id="settings-spotify-status" class="px-2.5 py-0.5 rounded-full font-bold text-[10px] bg-sonic-green/20 text-sonic-green border border-sonic-green/30">Integrado ✓</span>
             </div>
-            <p class="text-[10px] leading-relaxed text-white/45">Conecta tu cuenta para importar playlists completas. La aplicación usa autorización segura PKCE y nunca guarda el Client Secret.</p>
-            <button id="btn-settings-connect-spotify" class="w-full py-2 rounded-xl bg-sonic-green text-black font-bold text-xs active:scale-95 transition-all">Conectar Spotify</button>
+            <p class="text-[10px] leading-relaxed text-white/45">Credenciales oficiales integradas en la aplicación. Puedes vincular tu cuenta personal si deseas acceder a tus playlists privadas.</p>
+            <button id="btn-settings-connect-spotify" class="w-full py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold text-xs active:scale-95 transition-all">Vincular Cuenta Spotify</button>
           </div>
 
           <!-- SECTION 4: SALIDA DE AUDIO -->
@@ -565,12 +565,10 @@ export class SettingsModal {
     const badge = document.getElementById('settings-spotify-status');
     const button = document.getElementById('btn-settings-connect-spotify');
     if (badge) {
-      badge.textContent = spotifyAuth.connected ? 'Conectado ✓' : spotifyAuth.configured ? 'Listo para conectar' : 'Sin configurar';
-      badge.className = spotifyAuth.connected
-        ? 'px-2.5 py-0.5 rounded-full font-bold text-[10px] bg-sonic-green/20 text-sonic-green border border-sonic-green/30'
-        : 'px-2.5 py-0.5 rounded-full font-bold text-[10px] bg-white/10 text-white/60';
+      badge.textContent = spotifyAuth.connected ? 'Cuenta Vinculada ✓' : 'Integrado ✓';
+      badge.className = 'px-2.5 py-0.5 rounded-full font-bold text-[10px] bg-sonic-green/20 text-sonic-green border border-sonic-green/30';
     }
-    if (button) button.textContent = spotifyAuth.connected ? 'Desconectar' : 'Conectar Spotify';
+    if (button) button.textContent = spotifyAuth.connected ? 'Desvincular Cuenta' : 'Vincular Cuenta Spotify';
   }
 
   private async refreshStorageUI() {

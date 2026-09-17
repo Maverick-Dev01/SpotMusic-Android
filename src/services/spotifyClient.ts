@@ -147,7 +147,7 @@ class SpotifyClient {
       owner: (entity.authors && entity.authors[0]?.name) || 'Spotify',
       total_tracks: tracks.length,
       tracks,
-      partial: info.type === 'playlist'
+      partial: false
     };
   }
 

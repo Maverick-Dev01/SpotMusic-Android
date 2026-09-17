@@ -153,6 +153,24 @@
         <button class="btn-lib-filter px-3.5 py-1.5 rounded-full text-xs font-medium bg-white/5 text-white/70 border border-white/10" data-tab="recent">Historial</button>
       </div>
 
+      <!-- Selection & Folder Action Bar -->
+      <div id="lib-selection-bar" class="flex items-center justify-between p-2 rounded-2xl bg-white/5 border border-white/10 mb-2 flex-shrink-0">
+        <div class="flex items-center gap-2">
+          <button id="btn-toggle-select-mode" class="px-2.5 py-1 rounded-xl bg-white/10 hover:bg-white/15 text-white/80 text-xs font-semibold flex items-center gap-1.5 active:scale-95 transition-all">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+            <span id="label-select-mode">Seleccionar</span>
+          </button>
+          <span id="selected-tracks-count" class="text-xs text-sonic-green font-semibold hidden">0 seleccionadas</span>
+        </div>
+        <div id="lib-actions-container" class="flex items-center gap-1.5 hidden">
+          <button id="btn-select-all-lib" class="px-2 py-1 rounded-xl bg-white/10 text-white/70 text-xs font-medium active:scale-95">Todas</button>
+          <button id="btn-move-to-folder" class="px-3 py-1 rounded-xl bg-sonic-green text-black text-xs font-bold active:scale-95 transition-all shadow-md shadow-green-500/20 flex items-center gap-1">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            <span>Mover a Carpeta</span>
+          </button>
+        </div>
+      </div>
+
       <!-- Track List -->
       <div class="flex-1 divide-y divide-white/5 space-y-2 py-2" id="library-tracks-container">
         <!-- Dynamic tracks rendered by JS -->

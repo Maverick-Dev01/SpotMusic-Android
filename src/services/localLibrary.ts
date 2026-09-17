@@ -194,7 +194,16 @@ class LocalLibrary {
     });
   }
 
+  public async isTrackOffline(id: string): Promise<boolean> {
+    const blob = await this.getAudioBlob(id);
+    return !!blob;
+  }
+
   public async addTrackToPlaylist(playlistId: string, track: Track): Promise<void> {
+    await this.addTracksToPlaylist(playlistId, [track]);
+  }
+
+  public async addTracksToPlaylist(playlistId: string, newTracks: Track[]): Promise<number> {
     const db = await this.getDB();
     return new Promise((resolve, reject) => {
       const tx = db.transaction('playlists', 'readwrite');
@@ -203,15 +212,20 @@ class LocalLibrary {
 
       req.onsuccess = () => {
         const pl: Playlist = req.result;
-        if (pl) {
+        if (!pl) {
+          return resolve(0);
+        }
+        let addedCount = 0;
+        for (const track of newTracks) {
           if (!pl.tracks.some(t => t.id === track.id)) {
             pl.tracks.push(track);
-            pl.trackCount = pl.tracks.length;
+            addedCount++;
             if (!pl.cover_url && track.cover_url) pl.cover_url = track.cover_url;
-            store.put(pl);
           }
         }
-        tx.oncomplete = () => resolve();
+        pl.trackCount = pl.tracks.length;
+        store.put(pl);
+        tx.oncomplete = () => resolve(addedCount);
       };
       req.onerror = () => reject(req.error);
     });

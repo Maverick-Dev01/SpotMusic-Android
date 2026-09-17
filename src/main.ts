@@ -16,6 +16,8 @@ import { SleepTimerModal } from './components/SleepTimerModal';
 import { SearchModal } from './components/SearchModal';
 import { SettingsModal } from './components/SettingsModal';
 import { PlaylistModal } from './components/PlaylistModal';
+import { FolderModal, folderModal } from './components/FolderModal';
+import { UpdatesModal } from './components/UpdatesModal';
 import { updaterClient } from './services/updaterClient';
 import { spotifyAuth } from './services/spotifyAuth';
 
@@ -320,8 +322,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 6. Library View Controller
   let currentLibTab: 'all' | 'favs' | 'recent' = 'all';
+  let isSelectMode = false;
+  const selectedLibTrackIds = new Set<string>();
   const libTracksContainer = document.getElementById('library-tracks-container');
   const libTotalCount = document.getElementById('library-total-count');
+  const btnToggleSelectMode = document.getElementById('btn-toggle-select-mode');
+  const labelSelectMode = document.getElementById('label-select-mode');
+  const selectedTracksCount = document.getElementById('selected-tracks-count');
+  const libActionsContainer = document.getElementById('lib-actions-container');
+  const btnSelectAllLib = document.getElementById('btn-select-all-lib');
+  const btnMoveToFolder = document.getElementById('btn-move-to-folder');
 
   document.querySelectorAll('.btn-lib-filter').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -330,11 +340,61 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
       btn.className = 'btn-lib-filter px-3.5 py-1.5 rounded-full text-xs font-semibold bg-sonic-green text-black';
       currentLibTab = (btn.getAttribute('data-tab') as any) || 'all';
+      selectedLibTrackIds.clear();
+      updateSelectionUI();
       refreshLibraryView();
     });
   });
 
   document.getElementById('btn-refresh-library')?.addEventListener('click', refreshLibraryView);
+
+  // Multi-select mode toggle
+  btnToggleSelectMode?.addEventListener('click', () => {
+    isSelectMode = !isSelectMode;
+    if (!isSelectMode) selectedLibTrackIds.clear();
+    updateSelectionUI();
+    refreshLibraryView();
+  });
+
+  function updateSelectionUI() {
+    if (labelSelectMode) labelSelectMode.textContent = isSelectMode ? 'Cancelar' : 'Seleccionar';
+    if (selectedTracksCount) {
+      selectedTracksCount.textContent = `${selectedLibTrackIds.size} seleccionadas`;
+      selectedTracksCount.classList.toggle('hidden', !isSelectMode);
+    }
+    if (libActionsContainer) {
+      libActionsContainer.classList.toggle('hidden', !isSelectMode);
+    }
+  }
+
+  btnSelectAllLib?.addEventListener('click', async () => {
+    let tracks: Track[] = [];
+    if (currentLibTab === 'all') tracks = await localLibrary.getAllTracks();
+    else if (currentLibTab === 'favs') tracks = await localLibrary.getFavorites();
+    else tracks = await localLibrary.getRecentHistory(40);
+
+    if (selectedLibTrackIds.size === tracks.length) {
+      selectedLibTrackIds.clear();
+    } else {
+      tracks.forEach(t => selectedLibTrackIds.add(t.id));
+    }
+    updateSelectionUI();
+    refreshLibraryView();
+  });
+
+  btnMoveToFolder?.addEventListener('click', async () => {
+    if (selectedLibTrackIds.size === 0) {
+      return await appDialog.alert('Selecciona al menos una canción para mover a una carpeta.');
+    }
+    const allTracks = await localLibrary.getAllTracks();
+    const selectedTracks = allTracks.filter(t => selectedLibTrackIds.has(t.id));
+    folderModal.open(selectedTracks, () => {
+      selectedLibTrackIds.clear();
+      isSelectMode = false;
+      updateSelectionUI();
+      refreshLibraryView();
+    });
+  });
 
   document.getElementById('btn-scan-device-audio')?.addEventListener('click', async () => {
     const btn = document.getElementById('btn-scan-device-audio');
@@ -371,33 +431,88 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    libTracksContainer.innerHTML = tracks.map((t, idx) => `
-      <div class="flex items-center justify-between p-2.5 rounded-2xl hover:bg-white/5 transition-all cursor-pointer group" data-lib-idx="${idx}">
+    const allPlaylists = await localLibrary.getAllPlaylists();
+    const playlistTrackIds = new Set<string>();
+    allPlaylists.forEach(pl => (pl.tracks || []).forEach(tr => playlistTrackIds.add(tr.id)));
+
+    libTracksContainer.innerHTML = tracks.map((t, idx) => {
+      const isSelected = selectedLibTrackIds.has(t.id);
+      const isOffline = t.isLocal || !!t.localPath;
+      const inPlaylist = playlistTrackIds.has(t.id);
+
+      return `
+      <div class="flex items-center justify-between p-2.5 rounded-2xl hover:bg-white/5 transition-all cursor-pointer group ${isSelected ? 'bg-sonic-green/10 border border-sonic-green/30' : ''}" data-lib-idx="${idx}">
         <div class="flex items-center gap-3 min-w-0 flex-1">
+          ${isSelectMode ? `
+            <input type="checkbox" class="lib-track-check accent-sonic-green w-4 h-4 rounded cursor-pointer" data-id="${escapeHtml(t.id)}" ${isSelected ? 'checked' : ''} />
+          ` : ''}
           <div class="relative w-11 h-11 rounded-xl overflow-hidden flex-shrink-0 bg-obsidian-800 border border-white/10">
             <img src="${escapeHtml(t.cover_url || '')}" alt="Cover" class="w-full h-full object-cover" data-hide-on-error />
           </div>
           <div class="min-w-0 flex-1">
             <h4 class="text-xs font-semibold text-white truncate">${escapeHtml(t.name)}</h4>
-            <p class="text-[11px] text-white/50 truncate">${escapeHtml(t.artists)}</p>
+            <div class="flex items-center gap-1.5 mt-0.5">
+              <p class="text-[11px] text-white/50 truncate max-w-[120px]">${escapeHtml(t.artists)}</p>
+              ${isOffline ? `<span class="px-1.5 py-0.2 rounded bg-sonic-green/20 text-sonic-green font-mono text-[9px] font-semibold flex-shrink-0">Offline</span>` : ''}
+              ${inPlaylist ? `<span class="px-1.5 py-0.2 rounded bg-sonic-cyan/20 text-sonic-cyan font-mono text-[9px] font-semibold flex-shrink-0">Playlist</span>` : ''}
+            </div>
           </div>
         </div>
 
-        <div class="flex items-center gap-2 pl-2">
+        <div class="flex items-center gap-1.5 pl-2">
           <span class="text-[10px] font-mono text-white/40">${escapeHtml(t.duration_str || '--:--')}</span>
+          <button class="btn-lib-folder p-1.5 text-white/30 hover:text-sonic-green rounded-lg" data-id="${escapeHtml(t.id)}" title="Mover a carpeta/playlist">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          </button>
           <button class="btn-lib-delete p-1.5 text-white/30 hover:text-red-400 rounded-lg" data-id="${escapeHtml(t.id)}" title="Eliminar de biblioteca">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18m-2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
           </button>
         </div>
       </div>
-    `).join('');
+    `;
+    }).join('');
 
-    // Click track to play
+    // Checkbox changes
+    libTracksContainer.querySelectorAll<HTMLInputElement>('.lib-track-check').forEach(chk => {
+      chk.addEventListener('change', (e) => {
+        e.stopPropagation();
+        const id = chk.getAttribute('data-id');
+        if (!id) return;
+        if (chk.checked) selectedLibTrackIds.add(id);
+        else selectedLibTrackIds.delete(id);
+        updateSelectionUI();
+        refreshLibraryView();
+      });
+    });
+
+    // Click track to play (or toggle selection if select mode)
     libTracksContainer.querySelectorAll('[data-lib-idx]').forEach((el, i) => {
       el.addEventListener('click', (e) => {
-        if ((e.target as HTMLElement).closest('.btn-lib-delete')) return;
+        if ((e.target as HTMLElement).closest('.btn-lib-delete') || (e.target as HTMLElement).closest('.btn-lib-folder') || (e.target as HTMLElement).closest('.lib-track-check')) return;
+        if (isSelectMode) {
+          const track = tracks[i];
+          if (selectedLibTrackIds.has(track.id)) selectedLibTrackIds.delete(track.id);
+          else selectedLibTrackIds.add(track.id);
+          updateSelectionUI();
+          refreshLibraryView();
+          return;
+        }
         audioEngine.playQueue(tracks, i);
         switchView('view-player');
+      });
+    });
+
+    // Move single track to folder
+    libTracksContainer.querySelectorAll('.btn-lib-folder').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = btn.getAttribute('data-id');
+        const track = tracks.find(t => t.id === id);
+        if (track) {
+          folderModal.open([track], () => {
+            refreshLibraryView();
+          });
+        }
       });
     });
 
@@ -479,6 +594,9 @@ document.addEventListener('DOMContentLoaded', async () => {
           <button class="btn-play-dl w-9 h-9 rounded-full bg-sonic-green hover:bg-emerald-400 text-black flex items-center justify-center shadow-md active:scale-90 transition-all" data-dl-idx="${idx}" title="Reproducir ahora">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg>
           </button>
+          <button class="btn-folder-dl p-2 text-white/40 hover:text-sonic-green rounded-lg active:scale-90 transition-all" data-id="${escapeHtml(t.id)}" title="Mover / Asignar a Carpeta">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          </button>
           <button class="btn-del-dl p-2 text-white/30 hover:text-red-400 rounded-lg active:scale-90 transition-all" data-id="${escapeHtml(t.id)}" title="Quitar descarga de la app">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18m-2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
           </button>
@@ -489,11 +607,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Click track row or play button
     downloadedContainer.querySelectorAll(':scope > [data-dl-idx]').forEach(el => {
       el.addEventListener('click', (e) => {
-        if ((e.target as HTMLElement).closest('.btn-del-dl')) return;
+        if ((e.target as HTMLElement).closest('.btn-del-dl') || (e.target as HTMLElement).closest('.btn-folder-dl')) return;
         const idxStr = el.getAttribute('data-dl-idx');
         const idx = idxStr !== null ? parseInt(idxStr, 10) : 0;
         audioEngine.playQueue(dlTracks, idx);
         switchView('view-player');
+      });
+    });
+
+    // Move track to folder
+    downloadedContainer.querySelectorAll('.btn-folder-dl').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = btn.getAttribute('data-id');
+        const track = dlTracks.find(t => t.id === id);
+        if (track) {
+          folderModal.open([track], () => {
+            renderDownloadedTracks();
+            refreshLibraryView();
+          });
+        }
       });
     });
 
@@ -602,12 +735,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     audioEngine.addToQueue(existingTracks[0]);
   }
 
-  // 9. Silent Auto-Check for Updates on Launch
+  // 9. Auto-Check for Updates on Launch
+  const updatesModal = new UpdatesModal();
   try {
     const update = await updaterClient.checkForUpdates();
     const dot = document.getElementById('settings-status-dot');
-    if (update.hasUpdate && dot) {
-      dot.className = 'absolute top-0.5 right-0.5 w-2.5 h-2.5 rounded-full bg-sonic-cyan border-2 border-obsidian-900 animate-pulse';
+    if (update.hasUpdate) {
+      if (dot) dot.className = 'absolute top-0.5 right-0.5 w-2.5 h-2.5 rounded-full bg-sonic-cyan border-2 border-obsidian-900 animate-pulse';
+      setTimeout(() => {
+        updatesModal.open();
+      }, 1500);
     }
   } catch (e) {
     console.warn('Auto update check failed silently:', e);
