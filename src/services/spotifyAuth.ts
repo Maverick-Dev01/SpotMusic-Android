@@ -6,6 +6,9 @@ import { spotifyClient } from './spotifyClient';
 type AuthListener = () => void;
 
 const REDIRECT_URI = 'spotmusic-login://callback';
+// OAuth client IDs are public identifiers in installed apps. Authentication uses PKCE;
+// a client secret must never be bundled in the APK.
+const DEFAULT_CLIENT_ID = 'e0e9be08cc8f4815a6b726ee648016f2';
 const CLIENT_ID_KEY = 'spotmusic_spotify_client_id';
 const ACCESS_TOKEN_KEY = 'spotmusic_spotify_access_token_v2';
 const REFRESH_TOKEN_KEY = 'spotmusic_spotify_refresh_token';
@@ -20,7 +23,7 @@ class SpotifyAuth {
   public get clientId(): string {
     const configured = localStorage.getItem(CLIENT_ID_KEY)?.trim() || '';
     const buildEnv = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env;
-    return configured || String(buildEnv?.VITE_SPOTIFY_CLIENT_ID || '').trim();
+    return configured || String(buildEnv?.VITE_SPOTIFY_CLIENT_ID || '').trim() || DEFAULT_CLIENT_ID;
   }
 
   public get configured() { return !!this.clientId; }
