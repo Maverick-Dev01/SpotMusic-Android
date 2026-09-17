@@ -1,4 +1,5 @@
 import { Device } from '@capacitor/device';
+import { App } from '@capacitor/app';
 import { LicenseInfo } from '../types';
 
 const SUPABASE_URL = 'https://ekxbhsztryixtstksmiw.supabase.co';
@@ -13,6 +14,31 @@ class LicenseClient {
 
   constructor() {
     this.initMachineId();
+    this.initSyncListeners();
+  }
+
+  private initSyncListeners() {
+    try {
+      App.addListener('appStateChange', (state) => {
+        if (state.isActive) {
+          this.checkLicense(true);
+        }
+      });
+    } catch (e) {}
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('focus', () => {
+        this.checkLicense(true);
+      });
+    }
+
+    // Fast heartbeat check every 15 seconds for rapid revocation & reactivation reflection
+    setInterval(() => {
+      const current = this.getSavedLicense();
+      if (current && current.token) {
+        this.checkLicense(false);
+      }
+    }, 15000);
   }
 
   public on(event: 'change', cb: (info: LicenseInfo) => void) {
@@ -67,7 +93,13 @@ class LicenseClient {
   public async checkLicense(forceRemote = false): Promise<LicenseInfo> {
     const current = this.getSavedLicense();
     if (!current.token) return { ...current, valid: false, status: 'unlicensed' };
-    if ((!forceRemote && this.verifiedAt > 0 && Date.now() - this.verifiedAt < 300000)) {
+    
+    const shouldCheckOnline = forceRemote || 
+      !this.verifiedAt || 
+      (Date.now() - this.verifiedAt > 15000) || 
+      current.status === 'revoked';
+
+    if (!shouldCheckOnline) {
       return current;
     }
 
@@ -75,7 +107,7 @@ class LicenseClient {
       const devId = await this.getDeviceId();
       const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/check_license`, {
         method: 'POST',
-        signal: AbortSignal.timeout(12000),
+        signal: AbortSignal.timeout(8000),
         headers: {
           'apikey': SUPABASE_ANON_KEY,
           'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
