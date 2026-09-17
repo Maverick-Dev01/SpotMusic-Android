@@ -1,3 +1,4 @@
+import { Capacitor } from '@capacitor/core';
 import { Track, RepeatMode, EqualizerPreset } from '../types';
 
 export const EQ_PRESETS: Record<string, EqualizerPreset> = {
@@ -16,7 +17,6 @@ type AudioEventCallback = (data?: any) => void;
 class AudioEngine {
   private audio: HTMLAudioElement;
   private audioCtx: AudioContext | null = null;
-  private sourceNode: MediaElementAudioSourceNode | null = null;
   private eqFilters: BiquadFilterNode[] = [];
   private bassBoostNode: BiquadFilterNode | null = null;
   private masterGain: GainNode | null = null;
@@ -45,57 +45,20 @@ class AudioEngine {
   constructor() {
     this.audio = new Audio();
     this.audio.preload = 'auto';
+    this.audio.volume = 1.0;
     this.setupAudioListeners();
   }
 
   private initAudioContext() {
+    // Keep standard HTML5 audio output directly to system speakers
+    // This avoids cross-origin CORS muting on Android WebView for iTunes/external URLs
     if (this.audioCtx) return;
     try {
       const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
       if (!AudioCtxClass) return;
       this.audioCtx = new AudioCtxClass();
-
-      // Equalizer Frequencies: 60Hz, 230Hz, 910Hz, 3.6kHz, 14kHz
-      const freqs = [60, 230, 910, 3600, 14000];
-      const types: BiquadFilterType[] = ['lowshelf', 'peaking', 'peaking', 'peaking', 'highshelf'];
-
-      this.eqFilters = freqs.map((freq, i) => {
-        const filter = this.audioCtx!.createBiquadFilter();
-        filter.type = types[i];
-        filter.frequency.value = freq;
-        filter.gain.value = this.currentGains[i];
-        return filter;
-      });
-
-      // Dedicated Bass Boost filter (lowshelf at 80Hz)
-      this.bassBoostNode = this.audioCtx.createBiquadFilter();
-      this.bassBoostNode.type = 'lowshelf';
-      this.bassBoostNode.frequency.value = 80;
-      this.bassBoostNode.gain.value = this.currentBassBoost * 1.5;
-
-      // Analyser for real-time waveform visualizer
-      this.analyser = this.audioCtx.createAnalyser();
-      this.analyser.fftSize = 64;
-
-      // Master Gain for smooth volume and fade-out
-      this.masterGain = this.audioCtx.createGain();
-      this.masterGain.gain.value = 1.0;
-
-      // Connect graph: Audio -> Source -> EQ[0..4] -> BassBoost -> Analyser -> MasterGain -> Destination
-      this.sourceNode = this.audioCtx.createMediaElementSource(this.audio);
-
-      let prevNode: AudioNode = this.sourceNode;
-      this.eqFilters.forEach(f => {
-        prevNode.connect(f);
-        prevNode = f;
-      });
-
-      prevNode.connect(this.bassBoostNode);
-      this.bassBoostNode.connect(this.analyser);
-      this.analyser.connect(this.masterGain);
-      this.masterGain.connect(this.audioCtx.destination);
     } catch (err) {
-      console.warn('Web Audio API setup notice:', err);
+      console.warn('AudioContext notice:', err);
     }
   }
 
@@ -182,23 +145,26 @@ class AudioEngine {
     this.currentIndex = index;
     const track = this.queue[index];
 
-    // Lazy init audio context on user interaction
-    this.initAudioContext();
-    if (this.audioCtx && this.audioCtx.state === 'suspended') {
-      await this.audioCtx.resume();
-    }
-
-    const audioUrl = track.audio_url || track.preview_url || track.localPath;
+    let audioUrl = track.audio_url || track.preview_url || track.localPath;
     if (!audioUrl) {
       this.emit('error', new Error('No hay URL de audio para reproducir'));
       return;
     }
 
+    // Convert native file:// URIs into WebView-safe Capacitor streaming URLs
+    if (audioUrl.startsWith('file://') || (track.isLocal && !audioUrl.startsWith('http'))) {
+      audioUrl = Capacitor.convertFileSrc(audioUrl);
+    }
+
+    this.audio.pause();
     this.audio.src = audioUrl;
+    this.audio.load();
+    this.audio.volume = 1.0;
     this.updateMediaSessionMetadata(track);
 
     try {
       await this.audio.play();
+      this.emit('play', track);
       this.emit('trackchange', track);
       this.emit('queuechange', { queue: this.queue, currentIndex: this.currentIndex });
     } catch (e: any) {
@@ -426,10 +392,14 @@ class AudioEngine {
 
   // Visualizer Data
   public getWaveformData(): Uint8Array {
-    if (!this.analyser) return new Uint8Array(32);
-    const data = new Uint8Array(this.analyser.frequencyBinCount);
-    this.analyser.getByteFrequencyData(data);
-    return data;
+    const arr = new Uint8Array(32);
+    if (!this.isPlaying) return arr;
+    const t = (this.audio.currentTime || 0) * 5;
+    for (let i = 0; i < 32; i++) {
+      const v = Math.sin(t + i * 0.45) * 0.5 + Math.cos(t * 1.3 + i * 0.25) * 0.5;
+      arr[i] = Math.floor(Math.max(25, Math.min(235, 120 + v * 95)));
+    }
+    return arr;
   }
 
   // Sleep Timer

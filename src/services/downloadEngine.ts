@@ -25,10 +25,26 @@ class DownloadEngine {
     this.listeners.forEach(cb => cb(this.tasks));
   }
 
+  public get quality(): string {
+    return localStorage.getItem('spotmusic_download_quality') || '320k';
+  }
+
+  public setQuality(q: string) {
+    localStorage.setItem('spotmusic_download_quality', q);
+  }
+
+  public get downloadFolder(): string {
+    return localStorage.getItem('spotmusic_download_folder') || 'SpotMusic';
+  }
+
+  public setDownloadFolder(folder: string) {
+    localStorage.setItem('spotmusic_download_folder', folder);
+  }
+
   public async addDownload(track: Track): Promise<boolean> {
     const license = await licenseClient.checkLicense();
     if (!license.valid) {
-      throw new Error('Se requiere una licencia activa de KeyForge Pro para descargar música.');
+      throw new Error('Se requiere una clave activa para descargas ilimitadas. Pulsa en Licencia arriba para activar.');
     }
 
     if (this.queue.some(t => t.track.id === track.id && ['downloading', 'queued'].includes(t.status))) {
@@ -38,7 +54,8 @@ class DownloadEngine {
     const task: DownloadTask = {
       track,
       status: 'queued',
-      percent: 0
+      percent: 0,
+      quality: this.quality
     };
 
     this.queue.push(task);
@@ -106,9 +123,9 @@ class DownloadEngine {
       let localPath = '';
 
       try {
-        // Attempt saving to device filesystem
+        // Attempt saving to device filesystem in configured folder
         const writeRes = await Filesystem.writeFile({
-          path: `SpotMusic/${filename}`,
+          path: `${this.downloadFolder}/${filename}`,
           data: base64Data,
           directory: Directory.Documents,
           recursive: true
@@ -125,6 +142,7 @@ class DownloadEngine {
         isLocal: true,
         localPath: localPath || url,
         audio_url: localPath || url,
+        format: this.quality.toUpperCase(),
         size: (blob.size / (1024 * 1024)).toFixed(1) + ' MB',
         addedAt: Date.now()
       };

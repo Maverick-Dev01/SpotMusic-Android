@@ -156,6 +156,8 @@ export class SearchModal {
       el.addEventListener('click', () => {
         audioEngine.playTrack(tracks[i]);
         this.close();
+        const navPlayerBtn = document.getElementById('nav-btn-player');
+        navPlayerBtn?.click();
       });
     });
 

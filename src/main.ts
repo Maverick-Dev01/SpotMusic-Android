@@ -12,6 +12,9 @@ import { EqualizerModal } from './components/EqualizerModal';
 import { SleepTimerModal } from './components/SleepTimerModal';
 import { SearchModal } from './components/SearchModal';
 import { LicenseModal } from './components/LicenseModal';
+import { UpdatesModal } from './components/UpdatesModal';
+import { PlaylistModal } from './components/PlaylistModal';
+import { updaterClient } from './services/updaterClient';
 
 document.addEventListener('DOMContentLoaded', async () => {
   // 1. Initialize Components
@@ -22,6 +25,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const sleepTimerModal = new SleepTimerModal();
   const searchModal = new SearchModal();
   const licenseModal = new LicenseModal();
+  const updatesModal = new UpdatesModal();
+  const playlistModal = new PlaylistModal();
 
   // 2. DOM Elements
   const trackNameEl = document.getElementById('current-track-name');
@@ -38,12 +43,40 @@ document.addEventListener('DOMContentLoaded', async () => {
   const playerEqBadge = document.getElementById('player-eq-badge');
   const playerSleepBadge = document.getElementById('player-sleep-badge');
 
+  // Mini-Player DOM Elements
+  const miniPlayerBar = document.getElementById('mini-player-bar');
+  const miniPlayerTitle = document.getElementById('mini-player-title');
+  const miniPlayerArtist = document.getElementById('mini-player-artist');
+  const miniPlayerCover = document.getElementById('mini-player-cover') as HTMLImageElement;
+  const btnMiniPlayPause = document.getElementById('btn-mini-play-pause');
+  const iconMiniPlay = document.getElementById('icon-mini-play');
+  const iconMiniPause = document.getElementById('icon-mini-pause');
+  const btnMiniNext = document.getElementById('btn-mini-next');
+
   // Modals Triggers
   document.getElementById('btn-open-queue')?.addEventListener('click', () => queueDrawer.open());
   document.getElementById('btn-open-eq')?.addEventListener('click', () => equalizerModal.open());
   document.getElementById('btn-open-sleep')?.addEventListener('click', () => sleepTimerModal.open());
   document.getElementById('btn-open-search')?.addEventListener('click', () => searchModal.open());
   document.getElementById('btn-open-license')?.addEventListener('click', () => licenseModal.open());
+  document.getElementById('btn-open-updates')?.addEventListener('click', () => updatesModal.open());
+  document.getElementById('btn-open-playlists-tab')?.addEventListener('click', () => playlistModal.open());
+  document.getElementById('nav-btn-playlists')?.addEventListener('click', () => playlistModal.open());
+
+  // Mini Player Events
+  miniPlayerBar?.addEventListener('click', () => {
+    switchView('view-player');
+  });
+
+  btnMiniPlayPause?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    audioEngine.togglePlay();
+  });
+
+  btnMiniNext?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    audioEngine.next();
+  });
 
   // 3. Playback Controls
   btnPlayPause?.addEventListener('click', () => {
@@ -101,16 +134,25 @@ document.addEventListener('DOMContentLoaded', async () => {
   audioEngine.on('play', () => {
     if (iconPlayHero) iconPlayHero.style.display = 'none';
     if (iconPauseHero) iconPauseHero.style.display = 'block';
+    if (iconMiniPlay) iconMiniPlay.style.display = 'none';
+    if (iconMiniPause) iconMiniPause.style.display = 'block';
+    miniPlayerBar?.classList.remove('hidden');
   });
 
   audioEngine.on('pause', () => {
     if (iconPlayHero) iconPlayHero.style.display = 'block';
     if (iconPauseHero) iconPauseHero.style.display = 'none';
+    if (iconMiniPlay) iconMiniPlay.style.display = 'block';
+    if (iconMiniPause) iconMiniPause.style.display = 'none';
   });
 
   audioEngine.on('trackchange', (track: Track) => {
     if (trackNameEl) trackNameEl.textContent = track.name;
     if (trackArtistEl) trackArtistEl.textContent = `${track.artists} · ${track.album || 'SpotMusic'}`;
+    if (miniPlayerBar) miniPlayerBar.classList.remove('hidden');
+    if (miniPlayerTitle) miniPlayerTitle.textContent = track.name;
+    if (miniPlayerArtist) miniPlayerArtist.textContent = track.artists;
+    if (miniPlayerCover) miniPlayerCover.src = track.cover_url || '/logo.png';
     updateFavoriteButton(track.isFavorite || false);
     localLibrary.logHistory(track);
   });
@@ -204,6 +246,21 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   document.getElementById('btn-refresh-library')?.addEventListener('click', refreshLibraryView);
+
+  document.getElementById('btn-scan-device-audio')?.addEventListener('click', async () => {
+    const btn = document.getElementById('btn-scan-device-audio');
+    const originalHtml = btn?.innerHTML || '';
+    if (btn) btn.innerHTML = '<span class="text-sonic-green font-bold animate-pulse">Buscando...</span>';
+    try {
+      const found = await localLibrary.scanDeviceAudio();
+      alert(`Escaneo completado: se encontraron y agregaron ${found.length} archivos de audio de tu dispositivo.`);
+      refreshLibraryView();
+    } catch (e: any) {
+      alert('Aviso al escanear almacenamiento: ' + (e.message || e));
+    } finally {
+      if (btn) btn.innerHTML = originalHtml;
+    }
+  });
 
   async function refreshLibraryView() {
     if (!libTracksContainer) return;
@@ -314,6 +371,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     downloadEngine.clearFinished();
   });
 
+  // Download Config Selectors
+  const selectQuality = document.getElementById('select-download-quality') as HTMLSelectElement | null;
+  const selectFolder = document.getElementById('select-download-folder') as HTMLSelectElement | null;
+
+  if (selectQuality) {
+    selectQuality.value = downloadEngine.quality;
+    selectQuality.addEventListener('change', () => {
+      downloadEngine.setQuality(selectQuality.value);
+    });
+  }
+
+  if (selectFolder) {
+    selectFolder.value = downloadEngine.downloadFolder;
+    selectFolder.addEventListener('change', () => {
+      downloadEngine.setDownloadFolder(selectFolder.value);
+    });
+  }
+
   // 8. License Initial Sync
   const licenseInfo = await licenseClient.checkLicense();
   const topDot = document.getElementById('top-license-dot');
@@ -335,5 +410,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (trackNameEl) trackNameEl.textContent = existingTracks[0].name;
     if (trackArtistEl) trackArtistEl.textContent = `${existingTracks[0].artists} · ${existingTracks[0].album || 'SpotMusic'}`;
     audioEngine.addToQueue(existingTracks[0]);
+  }
+
+  // 9. Silent Auto-Check for Updates on Launch
+  try {
+    const update = await updaterClient.checkForUpdates();
+    const badge = document.getElementById('badge-update-available');
+    if (update.hasUpdate && badge) {
+      badge.classList.remove('hidden');
+    }
+  } catch (e) {
+    console.warn('Auto update check failed silently:', e);
   }
 });

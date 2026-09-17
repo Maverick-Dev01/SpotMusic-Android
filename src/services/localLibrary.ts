@@ -163,6 +163,141 @@ class LocalLibrary {
     });
   }
 
+  public async removeTrackFromPlaylist(playlistId: string, trackId: string): Promise<void> {
+    const db = await this.getDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('playlists', 'readwrite');
+      const store = tx.objectStore('playlists');
+      const req = store.get(playlistId);
+
+      req.onsuccess = () => {
+        const pl: Playlist = req.result;
+        if (pl) {
+          pl.tracks = pl.tracks.filter(t => t.id !== trackId);
+          pl.trackCount = pl.tracks.length;
+          store.put(pl);
+        }
+        tx.oncomplete = () => resolve();
+      };
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  public async deletePlaylist(playlistId: string): Promise<void> {
+    const db = await this.getDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('playlists', 'readwrite');
+      const store = tx.objectStore('playlists');
+      store.delete(playlistId);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  public async renamePlaylist(playlistId: string, newName: string): Promise<void> {
+    const db = await this.getDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('playlists', 'readwrite');
+      const store = tx.objectStore('playlists');
+      const req = store.get(playlistId);
+
+      req.onsuccess = () => {
+        const pl: Playlist = req.result;
+        if (pl) {
+          pl.name = newName.trim() || pl.name;
+          store.put(pl);
+        }
+        tx.oncomplete = () => resolve();
+      };
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  public async reorderPlaylist(playlistId: string, fromIndex: number, toIndex: number): Promise<void> {
+    const db = await this.getDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('playlists', 'readwrite');
+      const store = tx.objectStore('playlists');
+      const req = store.get(playlistId);
+
+      req.onsuccess = () => {
+        const pl: Playlist = req.result;
+        if (pl && fromIndex >= 0 && toIndex >= 0 && fromIndex < pl.tracks.length && toIndex < pl.tracks.length) {
+          const [moved] = pl.tracks.splice(fromIndex, 1);
+          pl.tracks.splice(toIndex, 0, moved);
+          store.put(pl);
+        }
+        tx.oncomplete = () => resolve();
+      };
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  // Scan device folders for offline music files
+  public async scanDeviceAudio(): Promise<Track[]> {
+    const { Filesystem, Directory } = await import('@capacitor/filesystem');
+    const scannedTracks: Track[] = [];
+    const validExtensions = ['.mp3', '.m4a', '.flac', '.wav', '.ogg', '.opus', '.aac'];
+
+    const searchDirs = [
+      { dir: Directory.Documents, path: 'SpotMusic' },
+      { dir: Directory.Documents, path: '' }
+    ];
+
+    for (const location of searchDirs) {
+      try {
+        const res = await Filesystem.readdir({
+          directory: location.dir,
+          path: location.path
+        });
+
+        for (const file of res.files) {
+          const fileName = typeof file === 'string' ? file : file.name;
+          const ext = '.' + fileName.split('.').pop()?.toLowerCase();
+          if (validExtensions.includes(ext)) {
+            const filePath = location.path ? `${location.path}/${fileName}` : fileName;
+            const uriRes = await Filesystem.getUri({
+              directory: location.dir,
+              path: filePath
+            });
+
+            // Extract Artist - Title
+            const baseName = fileName.replace(ext, '');
+            let artist = 'Audio Local';
+            let title = baseName;
+            if (baseName.includes(' - ')) {
+              const parts = baseName.split(' - ');
+              artist = parts[0].trim();
+              title = parts.slice(1).join(' - ').trim();
+            }
+
+            const track: Track = {
+              id: 'local-' + btoa(encodeURIComponent(filePath)).replace(/[/+=]/g, ''),
+              name: title,
+              artists: artist,
+              album: 'Música en Dispositivo',
+              duration_ms: 180000,
+              duration_str: '--:--',
+              cover_url: '',
+              isLocal: true,
+              localPath: uriRes.uri,
+              audio_url: uriRes.uri,
+              format: ext.replace('.', '').toUpperCase(),
+              addedAt: Date.now()
+            };
+
+            await this.saveTrack(track);
+            scannedTracks.push(track);
+          }
+        }
+      } catch (e) {
+        // Directory may not exist yet, continue
+      }
+    }
+
+    return scannedTracks;
+  }
+
   // History
   public async logHistory(track: Track): Promise<void> {
     const db = await this.getDB();

@@ -50,4 +50,8 @@ export interface DownloadTask {
   percent: number;
   speed?: string;
   error?: string;
+  quality?: string;
 }
+
+export type DownloadQuality = '320k' | '192k' | '128k' | 'flac';
+export type StorageLocation = 'Music' | 'Download' | 'Documents';

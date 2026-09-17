@@ -15,18 +15,24 @@
   <!-- TOP APP BAR -->
   <header class="pt-[calc(var(--sat)+12px)] pb-3 px-5 flex items-center justify-between border-b border-white/5 bg-obsidian-900/80 backdrop-blur-xl z-30 flex-shrink-0">
     <div class="flex items-center gap-2.5">
-      <div class="w-8 h-8 rounded-xl bg-gradient-to-tr from-sonic-green to-sonic-emerald flex items-center justify-center shadow-lg shadow-green-500/20">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" class="text-black"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+      <div class="w-9 h-9 rounded-2xl overflow-hidden shadow-lg shadow-green-500/30 border border-sonic-green/40 flex-shrink-0 bg-obsidian-900 flex items-center justify-center">
+        <img src="/logo.png" alt="SpotMusic" class="w-full h-full object-cover" />
       </div>
       <div>
         <h1 class="text-base font-extrabold tracking-tight text-white flex items-center gap-1.5">
           <span>SpotMusic</span>
-          <span class="text-[9px] px-1.5 py-0.2 rounded bg-sonic-green/20 text-sonic-green font-mono uppercase tracking-wider font-semibold">Pro</span>
+          <span class="text-[9px] px-1.5 py-0.2 rounded bg-sonic-green/20 text-sonic-green font-mono uppercase tracking-wider font-semibold">Mobile</span>
         </h1>
       </div>
     </div>
 
     <div class="flex items-center gap-2">
+      <!-- Updates Button -->
+      <button id="btn-open-updates" class="relative w-9 h-9 rounded-full bg-white/10 hover:bg-white/15 flex items-center justify-center text-white/80 transition-all active:scale-95" title="Actualizaciones">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        <span id="badge-update-available" class="hidden absolute top-0.5 right-0.5 w-2.5 h-2.5 rounded-full bg-sonic-green border-2 border-obsidian-900 animate-pulse"></span>
+      </button>
+
       <!-- License Pill -->
       <button id="btn-open-license" class="px-2.5 py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-medium flex items-center gap-1.5 transition-all">
         <span id="top-license-dot" class="w-2 h-2 rounded-full bg-yellow-400"></span>
@@ -125,14 +131,24 @@
           <h2 class="text-lg font-bold text-white">Mi Música Offline</h2>
           <p class="text-xs text-white/50"><span id="library-total-count">0</span> canciones en tu dispositivo</p>
         </div>
-        <button id="btn-refresh-library" class="p-2 rounded-xl bg-white/10 text-white/70 hover:text-white">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
-        </button>
+        <div class="flex items-center gap-2">
+          <button id="btn-scan-device-audio" class="px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-white/80 hover:text-white flex items-center gap-1.5 text-xs font-semibold transition-all active:scale-95" title="Escanear canciones locales">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            <span>Escanear</span>
+          </button>
+          <button id="btn-refresh-library" class="p-2 rounded-xl bg-white/10 text-white/70 hover:text-white transition-all active:scale-95" title="Recargar">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
+          </button>
+        </div>
       </div>
 
       <!-- Library Filter Tabs -->
       <div class="flex gap-2 pb-3 overflow-x-auto scrollbar-none flex-shrink-0">
         <button class="btn-lib-filter px-3.5 py-1.5 rounded-full text-xs font-semibold bg-sonic-green text-black" data-tab="all">Todas</button>
+        <button id="btn-open-playlists-tab" class="px-3.5 py-1.5 rounded-full text-xs font-semibold bg-sonic-cyan/15 text-sonic-cyan border border-sonic-cyan/30 flex items-center gap-1 active:scale-95 transition-all">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+          <span>Playlists</span>
+        </button>
         <button class="btn-lib-filter px-3.5 py-1.5 rounded-full text-xs font-medium bg-white/5 text-white/70 border border-white/10" data-tab="favs">Favoritas (❤️)</button>
         <button class="btn-lib-filter px-3.5 py-1.5 rounded-full text-xs font-medium bg-white/5 text-white/70 border border-white/10" data-tab="recent">Historial</button>
       </div>
@@ -148,11 +164,33 @@
       <div class="flex items-center justify-between pb-3">
         <div>
           <h2 class="text-lg font-bold text-white">Centro de Descargas</h2>
-          <p class="text-xs text-white/50">Música guardada en /Music/SpotMusic</p>
+          <p class="text-xs text-white/50">Música guardada directamente en tu almacenamiento</p>
         </div>
         <button id="btn-clear-downloads" class="text-xs text-white/50 hover:text-white px-2.5 py-1 rounded-xl bg-white/5">
           Limpiar
         </button>
+      </div>
+
+      <!-- Settings Cards: Quality & Storage Folder -->
+      <div class="grid grid-cols-2 gap-2.5 pb-3">
+        <div class="bg-obsidian-800/80 border border-white/10 rounded-2xl p-3">
+          <label class="block text-[10px] font-semibold text-white/50 uppercase tracking-wider mb-1">Calidad de Audio</label>
+          <select id="select-download-quality" class="w-full bg-obsidian-900 border border-white/10 rounded-xl px-2 py-1.5 text-xs text-sonic-green font-bold focus:outline-none">
+            <option value="320k">320 KBPS (Hi-Fi Ultra)</option>
+            <option value="192k">192 KBPS (Estándar)</option>
+            <option value="128k">128 KBPS (Ahorro de espacio)</option>
+            <option value="flac">FLAC (Sin pérdida)</option>
+          </select>
+        </div>
+
+        <div class="bg-obsidian-800/80 border border-white/10 rounded-2xl p-3">
+          <label class="block text-[10px] font-semibold text-white/50 uppercase tracking-wider mb-1">Carpeta Destino</label>
+          <select id="select-download-folder" class="w-full bg-obsidian-900 border border-white/10 rounded-xl px-2 py-1.5 text-xs text-white/80 font-medium focus:outline-none">
+            <option value="SpotMusic">/SpotMusic</option>
+            <option value="Music/SpotMusic">/Music/SpotMusic</option>
+            <option value="Download/SpotMusic">/Download/SpotMusic</option>
+          </select>
+        </div>
       </div>
 
       <!-- Downloads Tasks List -->
@@ -166,14 +204,43 @@
 
   </main>
 
+  <!-- PERSISTENT MINI PLAYER BAR -->
+  <div id="mini-player-bar" class="hidden mx-4 mb-2 p-2.5 rounded-2xl bg-obsidian-800/95 border border-white/15 backdrop-blur-xl shadow-2xl flex items-center justify-between gap-3 z-20 cursor-pointer active:scale-[0.99] transition-all">
+    <div class="flex items-center gap-3 min-w-0 flex-1">
+      <div class="w-10 h-10 rounded-xl overflow-hidden bg-obsidian-900 border border-white/10 flex-shrink-0 flex items-center justify-center">
+        <img id="mini-player-cover" src="/logo.png" alt="Cover" class="w-full h-full object-cover" />
+      </div>
+      <div class="min-w-0 flex-1">
+        <h4 id="mini-player-title" class="text-xs font-bold text-white truncate">SpotMusic</h4>
+        <p id="mini-player-artist" class="text-[11px] text-white/60 truncate">Toca para abrir reproductor</p>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-1.5" onclick="event.stopPropagation()">
+      <button id="btn-mini-play-pause" class="w-9 h-9 rounded-full bg-sonic-green text-black flex items-center justify-center shadow-md shadow-green-500/30 active:scale-90 transition-all" title="Reproducir / Pausar">
+        <svg id="icon-mini-play" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+        <svg id="icon-mini-pause" width="15" height="15" viewBox="0 0 24 24" fill="currentColor" style="display: none;"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+      </button>
+      <button id="btn-mini-next" class="p-2 text-white/70 hover:text-white active:scale-90 transition-all" title="Siguiente">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" stroke-width="3"/></svg>
+      </button>
+    </div>
+  </div>
+
   <!-- FLOATING BOTTOM DOCK NAVIGATION (PILL) -->
   <nav class="pb-[calc(var(--sab)+8px)] pt-2 px-5 bg-obsidian-900/90 backdrop-blur-2xl border-t border-white/10 z-30 flex-shrink-0">
-    <div class="max-w-xs mx-auto bg-obsidian-800/90 border border-white/10 rounded-full p-1.5 flex items-center justify-around shadow-2xl">
+    <div class="max-w-sm mx-auto bg-obsidian-800/90 border border-white/10 rounded-full p-1.5 flex items-center justify-around shadow-2xl">
       
       <!-- Player Tab -->
       <button id="nav-btn-player" class="nav-dock-btn flex-1 py-2 rounded-full flex flex-col items-center gap-1 text-sonic-green font-bold text-[10px] transition-all" data-view="view-player">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8" fill="#07090E"/></svg>
         <span>Reproductor</span>
+      </button>
+
+      <!-- Playlists Shortcut Tab -->
+      <button id="nav-btn-playlists" class="flex-1 py-2 rounded-full flex flex-col items-center gap-1 text-white/50 hover:text-white font-medium text-[10px] transition-all">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
+        <span>Playlists</span>
       </button>
 
       <!-- Library Tab -->
