@@ -16,10 +16,22 @@ export interface SpotifyPlaylistResult {
   owner: string;
   total_tracks: number;
   tracks: Track[];
+  partial?: boolean;
 }
 
 class SpotifyClient {
   private itunesCache: Map<string, string> = new Map();
+  private accessToken = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('spotmusic_spotify_access_token') || '' : '';
+
+  public setAccessToken(token: string) {
+    this.accessToken = token.trim();
+    if (typeof sessionStorage !== 'undefined') {
+      if (this.accessToken) sessionStorage.setItem('spotmusic_spotify_access_token', this.accessToken);
+      else sessionStorage.removeItem('spotmusic_spotify_access_token');
+    }
+  }
+
+  public get hasAccessToken() { return !!this.accessToken; }
 
   // Extract Spotify info from URL or URI
   public extractSpotifyInfo(input: string): { type: 'playlist' | 'album' | 'track'; id: string } | null {
@@ -51,6 +63,15 @@ class SpotifyClient {
     const info = this.extractSpotifyInfo(inputUrl);
     if (!info) {
       throw new Error('El enlace no es válido. Ingresa un enlace de Spotify (ej: https://open.spotify.com/playlist/...)');
+    }
+
+    if (this.accessToken) {
+      try {
+        return await this.fetchOfficialEntity(info, inputUrl);
+      } catch (error: any) {
+        if (/401/.test(error?.message || '')) this.setAccessToken('');
+        else throw error;
+      }
     }
 
     const embedUrl = `https://open.spotify.com/embed/${info.type}/${info.id}`;
@@ -125,7 +146,93 @@ class SpotifyClient {
       cover_url: coverUrl,
       owner: (entity.authors && entity.authors[0]?.name) || 'Spotify',
       total_tracks: tracks.length,
-      tracks
+      tracks,
+      partial: info.type === 'playlist'
+    };
+  }
+
+  private async spotifyApi(path: string, attempt = 0): Promise<any> {
+    const response = await CapacitorHttp.get({
+      url: `https://api.spotify.com/v1${path}`,
+      headers: { Authorization: `Bearer ${this.accessToken}`, Accept: 'application/json' },
+      connectTimeout: 15000,
+      readTimeout: 30000
+    });
+    if (response.status === 429 && attempt < 2) {
+      const retry = Number(response.headers?.['retry-after'] || response.headers?.['Retry-After'] || 2);
+      await new Promise(resolve => setTimeout(resolve, Math.min(60000, Math.max(1000, retry * 1000))));
+      return this.spotifyApi(path, attempt + 1);
+    }
+    if (response.status < 200 || response.status >= 300) {
+      throw new Error(`Spotify API respondió HTTP ${response.status}`);
+    }
+    return typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
+  }
+
+  private mapOfficialTrack(raw: any, fallbackCover: string, fallbackAlbum: string): Track | null {
+    const item = raw?.item || raw?.track || raw;
+    if (!item || item.type !== 'track' || !item.id) return null;
+    const duration = Number(item.duration_ms) || 0;
+    return {
+      id: `spotify-${item.id}`,
+      name: item.name || 'Canción sin título',
+      artists: Array.isArray(item.artists) ? item.artists.map((artist: any) => artist.name).filter(Boolean).join(', ') : 'Artista desconocido',
+      album: item.album?.name || fallbackAlbum,
+      duration_ms: duration,
+      duration_str: `${Math.floor(duration / 60000)}:${Math.floor((duration % 60000) / 1000).toString().padStart(2, '0')}`,
+      cover_url: item.album?.images?.[0]?.url || fallbackCover,
+      preview_url: item.preview_url || null,
+      audio_url: item.preview_url || undefined,
+      format: item.preview_url ? 'Preview Spotify' : 'Pendiente de resolver',
+      externalUrl: item.external_urls?.spotify,
+      isrc: item.external_ids?.isrc
+    };
+  }
+
+  private async fetchOfficialEntity(
+    info: { type: 'playlist' | 'album' | 'track'; id: string },
+    sourceUrl: string
+  ): Promise<SpotifyPlaylistResult> {
+    if (info.type === 'track') {
+      const item = await this.spotifyApi(`/tracks/${info.id}`);
+      const track = this.mapOfficialTrack(item, item.album?.images?.[0]?.url || '', item.album?.name || 'Spotify');
+      if (!track) throw new Error('Spotify no devolvió una canción válida.');
+      return {
+        id: info.id, type: 'track', name: track.name, description: '', cover_url: track.cover_url,
+        owner: track.artists, total_tracks: 1, tracks: [track]
+      };
+    }
+
+    const entity = await this.spotifyApi(`/${info.type}s/${info.id}`);
+    const cover = entity.images?.[0]?.url || '';
+    const tracks: Track[] = [];
+    let offset = 0;
+    const limit = 50;
+    let total = Number(entity.items?.total ?? entity.tracks?.total ?? entity.total_tracks ?? 0);
+    do {
+      const endpoint = info.type === 'playlist'
+        ? `/playlists/${info.id}/items?limit=${limit}&offset=${offset}&additional_types=track`
+        : `/albums/${info.id}/tracks?limit=${limit}&offset=${offset}`;
+      const page = await this.spotifyApi(endpoint);
+      total = Number(page.total ?? total);
+      for (const raw of page.items || []) {
+        const track = this.mapOfficialTrack(raw, cover, entity.name || 'Spotify');
+        if (track) tracks.push(track);
+      }
+      offset += page.items?.length || 0;
+      if (!page.next || !page.items?.length) break;
+    } while (offset < total);
+
+    return {
+      id: info.id,
+      type: info.type,
+      name: entity.name || 'Playlist de Spotify',
+      description: entity.description || '',
+      cover_url: cover,
+      owner: entity.owner?.display_name || entity.artists?.map((artist: any) => artist.name).join(', ') || 'Spotify',
+      total_tracks: total || tracks.length,
+      tracks,
+      partial: tracks.length < total
     };
   }
 

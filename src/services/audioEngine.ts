@@ -5,13 +5,17 @@ import { streamResolver } from './streamResolver';
 
 export const EQ_PRESETS: Record<string, EqualizerPreset> = {
   'Flat': { name: 'Plano (Flat)', gains: [0, 0, 0, 0, 0], bassBoost: 0 },
-  'BassBoost': { name: 'Potenciador de Bajos', gains: [7, 5, 0, 1, 2], bassBoost: 8 },
-  'Rock': { name: 'Rock Energético', gains: [5, 3, -1, 3, 5], bassBoost: 4 },
-  'Pop': { name: 'Pop Brillante', gains: [-1, 2, 5, 3, -1], bassBoost: 2 },
-  'Electronic': { name: 'Electrónica / EDM', gains: [6, 4, 0, 2, 5], bassBoost: 6 },
-  'Jazz': { name: 'Jazz Acústico', gains: [3, 2, -2, 2, 4], bassBoost: 2 },
+  'Phone': { name: 'Altavoz del teléfono', gains: [-6, -3, 1, 2, 0], bassBoost: -4 },
+  'AntiBoom': { name: 'Reducir retumbo', gains: [-9, -5, -1, 1, 0], bassBoost: -6 },
+  'Speaker': { name: 'Bocina externa', gains: [-3, -2, 0, 1, 1], bassBoost: -2 },
+  'Headphones': { name: 'Audífonos', gains: [-1, 0, 0, 1, 1], bassBoost: 0 },
+  'BassBoost': { name: 'Bajos moderados', gains: [3, 2, 0, 0, 1], bassBoost: 3 },
+  'Rock': { name: 'Rock Energético', gains: [2, 1, -1, 2, 2], bassBoost: 1 },
+  'Pop': { name: 'Pop Brillante', gains: [-1, 1, 3, 2, 0], bassBoost: 1 },
+  'Electronic': { name: 'Electrónica / EDM', gains: [3, 2, 0, 1, 2], bassBoost: 2 },
+  'Jazz': { name: 'Jazz Acústico', gains: [1, 1, -1, 1, 2], bassBoost: 0 },
   'Vocal': { name: 'Claridad Vocal', gains: [-2, -1, 5, 4, 1], bassBoost: 0 },
-  'Acoustic': { name: 'Acústico & En Vivo', gains: [3, 2, 1, 3, 4], bassBoost: 1 },
+  'Acoustic': { name: 'Acústico & En Vivo', gains: [1, 1, 1, 2, 2], bassBoost: 0 },
 };
 
 type AudioEventCallback = (data?: any) => void;
@@ -24,6 +28,7 @@ class AudioEngine {
   private eqFilters: BiquadFilterNode[] = [];
   private bassBoostNode: BiquadFilterNode | null = null;
   private masterGain: GainNode | null = null;
+  private compressor: DynamicsCompressorNode | null = null;
   private analyser: AnalyserNode | null = null;
 
   // Queue state
@@ -34,9 +39,9 @@ class AudioEngine {
   private shuffledOrder: number[] = [];
 
   // Equalizer state
-  public currentPreset: string = 'Flat';
-  public currentGains: [number, number, number, number, number] = [0, 0, 0, 0, 0];
-  public currentBassBoost: number = 0;
+  public currentPreset: string = 'Phone';
+  public currentGains: [number, number, number, number, number] = [-6, -3, 1, 2, 0];
+  public currentBassBoost: number = -4;
 
   // Sleep timer state
   private sleepTimerId: any = null;
@@ -50,10 +55,38 @@ class AudioEngine {
     this.audio = new Audio();
     this.audio.preload = 'auto';
     this.audio.volume = 1.0;
+    this.restoreEqualizer();
     this.setupAudioListeners();
   }
 
   public get equalizerAvailable(): boolean { return this.eqFilters.length === 5; }
+  public get currentPresetLabel(): string { return EQ_PRESETS[this.currentPreset]?.name || 'Personalizado'; }
+
+  private restoreEqualizer() {
+    if (typeof localStorage === 'undefined') return;
+    try {
+      const savedPreset = localStorage.getItem('spotmusic_eq_preset') || 'Phone';
+      const savedGains = JSON.parse(localStorage.getItem('spotmusic_eq_gains') || 'null');
+      const savedBassValue = localStorage.getItem('spotmusic_eq_bass');
+      const savedBass = savedBassValue === null ? null : Number(savedBassValue);
+      if (EQ_PRESETS[savedPreset]) {
+        this.currentPreset = savedPreset;
+        this.currentGains = [...EQ_PRESETS[savedPreset].gains];
+        this.currentBassBoost = EQ_PRESETS[savedPreset].bassBoost;
+      }
+      if (Array.isArray(savedGains) && savedGains.length === 5 && savedGains.every(Number.isFinite)) {
+        this.currentGains = savedGains.map(value => Math.max(-12, Math.min(12, Number(value)))) as EqualizerPreset['gains'];
+      }
+      if (savedBass !== null && Number.isFinite(savedBass)) this.currentBassBoost = Math.max(-10, Math.min(6, savedBass));
+    } catch {}
+  }
+
+  private persistEqualizer() {
+    if (typeof localStorage === 'undefined') return;
+    localStorage.setItem('spotmusic_eq_preset', this.currentPreset);
+    localStorage.setItem('spotmusic_eq_gains', JSON.stringify(this.currentGains));
+    localStorage.setItem('spotmusic_eq_bass', String(this.currentBassBoost));
+  }
 
   private initAudioContext() {
     if (this.audioCtx) return;
@@ -73,10 +106,16 @@ class AudioEngine {
       this.bassBoostNode.frequency.value = 90;
       this.bassBoostNode.gain.value = this.currentBassBoost;
       this.masterGain = this.audioCtx.createGain();
+      this.compressor = this.audioCtx.createDynamicsCompressor();
+      this.compressor.threshold.value = -12;
+      this.compressor.knee.value = 12;
+      this.compressor.ratio.value = 4;
+      this.compressor.attack.value = 0.003;
+      this.compressor.release.value = 0.25;
       this.analyser = this.audioCtx.createAnalyser();
       this.analyser.fftSize = 128;
       let previous: AudioNode = source;
-      for (const node of [...this.eqFilters, this.bassBoostNode, this.masterGain, this.analyser]) {
+      for (const node of [...this.eqFilters, this.bassBoostNode, this.masterGain, this.compressor, this.analyser]) {
         previous.connect(node);
         previous = node;
       }
@@ -89,7 +128,7 @@ class AudioEngine {
 
   private updateHeadroom() {
     if (this.masterGain && this.audioCtx) {
-      const boost = Math.max(0, ...this.currentGains) + this.currentBassBoost;
+      const boost = Math.max(0, ...this.currentGains) + Math.max(0, this.currentBassBoost);
       this.masterGain.gain.setTargetAtTime(Math.pow(10, -boost / 20), this.audioCtx.currentTime, .03);
     }
   }
@@ -205,7 +244,7 @@ class AudioEngine {
     const isPreview = !audioUrl || audioUrl.includes('apple.com') || audioUrl.includes('mzstatic') || audioUrl.includes('preview') || track.duration_ms === 30000;
     if (isPreview && !track.isLocal) {
       try {
-        const resolved = await streamResolver.resolveFullAudio(track.name, track.artists);
+        const resolved = await streamResolver.resolveFullAudio(track.name, track.artists, track.duration_ms);
         if (resolved) {
           audioUrl = resolved.audioUrl;
           track.audio_url = resolved.audioUrl;
@@ -249,6 +288,7 @@ class AudioEngine {
       this.eqFilters = [];
       this.bassBoostNode = null;
       this.masterGain = null;
+      this.compressor = null;
       this.analyser = null;
       this.audio = new Audio();
       this.audio.preload = 'auto';
@@ -452,7 +492,7 @@ class AudioEngine {
   // Equalizer & Bass Booster
   public applyPreset(presetName: string) {
     const preset = EQ_PRESETS[presetName] || EQ_PRESETS['Flat'];
-    this.currentPreset = presetName;
+    this.currentPreset = EQ_PRESETS[presetName] ? presetName : 'Flat';
     this.currentGains = [...preset.gains];
     this.currentBassBoost = preset.bassBoost;
 
@@ -465,6 +505,7 @@ class AudioEngine {
     }
 
     this.updateHeadroom();
+    this.persistEqualizer();
     this.emit('eqchange', {
       preset: this.currentPreset,
       gains: this.currentGains,
@@ -478,6 +519,7 @@ class AudioEngine {
     this.currentPreset = 'Custom';
     this.eqFilters[bandIndex].gain.setTargetAtTime(gainDb, this.audioCtx?.currentTime || 0, 0.05);
     this.updateHeadroom();
+    this.persistEqualizer();
     this.emit('eqchange', {
       preset: this.currentPreset,
       gains: this.currentGains,
@@ -486,11 +528,13 @@ class AudioEngine {
   }
 
   public setBassBoost(level: number) {
-    this.currentBassBoost = Math.max(0, Math.min(10, level));
+    this.currentBassBoost = Math.max(-10, Math.min(6, level));
+    this.currentPreset = 'Custom';
     if (this.bassBoostNode) {
       this.bassBoostNode.gain.setTargetAtTime(this.currentBassBoost, this.audioCtx?.currentTime || 0, 0.05);
     }
     this.updateHeadroom();
+    this.persistEqualizer();
     this.emit('eqchange', {
       preset: this.currentPreset,
       gains: this.currentGains,

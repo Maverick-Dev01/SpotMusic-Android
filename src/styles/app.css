@@ -130,7 +130,8 @@ body.theme-light #settings-modal-card {
   background-color: #FFFFFF !important;
 }
 
-body.theme-light #settings-select-quality {
+body.theme-light #settings-select-quality,
+body.theme-light #settings-audio-profile {
   background-color: #F1F5F9 !important;
   border-color: rgba(0, 0, 0, 0.1) !important;
 }
@@ -236,6 +237,131 @@ body.theme-light { --surface: #ffffff; --foreground: #172033; --muted: #526176; 
 .dialog-primary { background: var(--accent-color); color: #07120c; }
 .dialog-secondary { border: 1px solid var(--line); color: var(--foreground); }
 body.theme-light .bg-obsidian-900\/60 { background: #edf1f6 !important; }
+
+/* Responsive app shell */
+.app-shell { min-width: 280px; min-height: 100dvh; }
+.app-header > div { min-width: 0; }
+.app-header > div:last-child { flex-shrink: 0; }
+.player-view > * { width: 100%; }
+.track-info, #waveform-container, .transport-controls, .quick-actions { max-width: 760px; margin-inline: auto; }
+.content-view > * { width: min(100%, 960px); margin-inline: auto; }
+.deck-disc { width: 87%; height: auto; aspect-ratio: 1; }
+.deck-label { width: 41%; height: auto; aspect-ratio: 1; }
+.eq-band-panel { flex-shrink: 0; }
+.eq-band-panel > div,
+.eq-band-panel > div > div { min-width: 0; }
+.transport-controls, .quick-actions { min-width: 0; }
+.transport-controls button, .quick-actions button { flex-shrink: 0; }
+.bottom-nav { overflow: hidden; }
+.bottom-nav > div { width: 100%; min-width: 0; }
+.bottom-nav button { min-width: 0; overflow: hidden; }
+.bottom-nav button > span:not([id$="badge"]) {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#player-eq-badge, #player-sleep-badge { white-space: nowrap; }
+
+@media (max-width: 359px) {
+  .app-header { padding-inline: 12px; }
+  .app-header h1 { font-size: 14px; }
+  .player-view, .content-view { padding-inline: 12px; }
+  .bottom-nav { padding-inline: 8px; }
+  .bottom-nav > div { padding: 4px; }
+  .nav-dock-btn, #nav-btn-playlists { font-size: 8px; }
+  .transport-controls { padding-inline: 0; }
+  .transport-controls button:not(#btn-play-pause) { padding: 9px; }
+  .quick-actions { gap: 6px; }
+  .quick-actions button { min-width: 0; padding-inline: 7px; font-size: 9px; gap: 4px; }
+  .quick-actions svg { flex-shrink: 0; }
+  #player-queue-count { display: none; }
+  #playlist-modal-overlay, #search-modal-overlay { padding: 12px; }
+  #playlist-modal-overlay > div:first-child { gap: 8px; }
+  #playlist-modal-overlay #btn-import-spotify-pl,
+  #playlist-modal-overlay #btn-create-new-pl { padding-inline: 8px; }
+  #view-library > div:first-child,
+  #view-downloads > div:first-child { align-items: flex-start; flex-wrap: wrap; gap: 8px; }
+}
+
+@media (max-height: 700px) and (orientation: portrait) {
+  .app-header { padding-top: calc(var(--sat) + 7px); padding-bottom: 7px; }
+  .player-view { padding-top: 6px; padding-bottom: 4px; gap: 3px; }
+  .deck-shell { max-width: min(238px, 34dvh); }
+  .track-info h2 { font-size: 15px; }
+  #waveform-container { margin-block: 0; }
+  #waveform-touch-zone { height: 32px; }
+  .transport-controls { padding-bottom: 2px; }
+  #btn-play-pause { width: 52px; height: 52px; }
+  .quick-actions { padding-bottom: 2px; }
+  .bottom-nav { padding-top: 4px; }
+  .bottom-nav .nav-dock-btn, .bottom-nav #nav-btn-playlists { padding-block: 5px; }
+  .eq-band-panel { height: 168px; }
+}
+
+@media (max-height: 600px) and (orientation: portrait) {
+  .player-view { padding-top: 3px; gap: 0; }
+  .deck-shell { max-width: min(170px, 27dvh); }
+  #vinyl-deck-container { padding-block: 0; }
+  .track-info { padding-inline: 2px; }
+  #waveform-touch-zone { height: 26px; }
+  .quick-actions { padding-top: 0; }
+}
+
+@media (min-width: 768px) and (orientation: portrait) {
+  .app-header { padding-inline: 32px; }
+  .player-view { padding-inline: clamp(32px, 8vw, 96px); }
+  .deck-shell { max-width: min(410px, 42dvh); }
+  .track-info h2 { font-size: 22px; }
+  .content-view { padding-inline: clamp(32px, 8vw, 96px); }
+  #settings-modal-card { max-width: 560px; }
+  #playlist-modal-overlay, #search-modal-overlay { padding-inline: clamp(32px, 8vw, 96px); }
+}
+
+@media (orientation: landscape) and (min-width: 600px) {
+  .app-header { padding-top: calc(var(--sat) + 6px); padding-bottom: 6px; }
+  #view-player:not(.hidden) {
+    display: grid;
+    grid-template-columns: minmax(220px, .9fr) minmax(320px, 1.1fr);
+    grid-template-rows: auto auto auto auto auto;
+    align-items: center;
+    column-gap: clamp(24px, 6vw, 88px);
+    row-gap: 4px;
+    padding: 8px clamp(24px, 6vw, 96px);
+  }
+  .player-topbar { grid-column: 1 / -1; grid-row: 1; }
+  #vinyl-deck-container { grid-column: 1; grid-row: 2 / 6; align-self: center; }
+  .deck-shell { max-width: min(300px, 56dvh); }
+  .track-info { grid-column: 2; grid-row: 2; align-self: end; }
+  #waveform-container { grid-column: 2; grid-row: 3; margin-block: 0; }
+  .transport-controls { grid-column: 2; grid-row: 4; width: 100%; }
+  .quick-actions { grid-column: 2; grid-row: 5; padding-bottom: 0; width: 100%; }
+  .bottom-nav { padding-top: 4px; }
+  .bottom-nav .nav-dock-btn, .bottom-nav #nav-btn-playlists { padding-block: 5px; }
+  #settings-modal-card { max-width: 560px; }
+}
+
+@media (orientation: landscape) and (min-width: 600px) and (max-height: 450px) {
+  #view-player:not(.hidden) {
+    grid-template-rows: 24px minmax(32px, auto) 48px 58px 34px;
+    align-content: center;
+    row-gap: 1px;
+    padding-block: 4px;
+  }
+  .deck-shell { max-width: min(220px, 52dvh); }
+  #waveform-touch-zone { height: 28px; }
+  #btn-play-pause { width: 52px; height: 52px; }
+  .transport-controls { padding-block: 0; }
+  .quick-actions { gap: 6px; padding-top: 0; }
+  .quick-actions button { min-width: 0; padding: 4px 8px; font-size: 9px; gap: 4px; }
+  .quick-actions svg { width: 12px; height: 12px; flex-shrink: 0; }
+  #player-queue-count { display: none; }
+}
+
+@media (min-width: 1200px) {
+  .player-view { width: 100%; max-width: 1280px; left: 50%; right: auto; transform: translateX(-50%); }
+}
 
 #queue-drawer-overlay.opacity-0.pointer-events-none { visibility: hidden; }
 

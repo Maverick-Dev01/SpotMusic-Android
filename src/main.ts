@@ -17,8 +17,21 @@ import { SearchModal } from './components/SearchModal';
 import { SettingsModal } from './components/SettingsModal';
 import { PlaylistModal } from './components/PlaylistModal';
 import { updaterClient } from './services/updaterClient';
+import { spotifyAuth } from './services/spotifyAuth';
 
 document.addEventListener('DOMContentLoaded', async () => {
+  document.addEventListener('error', event => {
+    const image = event.target as HTMLImageElement;
+    if (!(image instanceof HTMLImageElement)) return;
+    const fallback = image.dataset.fallback;
+    if (fallback && !image.dataset.fallbackApplied) {
+      image.dataset.fallbackApplied = 'true';
+      image.src = fallback;
+    } else if (image.dataset.hideOnError !== undefined) {
+      image.style.display = 'none';
+    }
+  }, true);
+  await spotifyAuth.initialize();
   // 0. Restore Theme & Accent
   const savedMode = localStorage.getItem('spotmusic_theme_mode') || 'dark';
   if (savedMode === 'light') {
@@ -47,6 +60,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const searchModal = new SearchModal();
   const settingsModal = new SettingsModal();
   const playlistModal = new PlaylistModal();
+  document.addEventListener('spotmusic:open-equalizer', () => equalizerModal.open());
   setupModalBehavior();
 
   // 2. DOM Elements
@@ -63,6 +77,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const playerQueueCount = document.getElementById('player-queue-count');
   const playerEqBadge = document.getElementById('player-eq-badge');
   const playerSleepBadge = document.getElementById('player-sleep-badge');
+  if (playerEqBadge) playerEqBadge.textContent = `EQ: ${audioEngine.currentPresetLabel}`;
 
   // Mini-Player DOM Elements
   const miniPlayerBar = document.getElementById('mini-player-bar');
@@ -235,7 +250,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   audioEngine.on('eqchange', (data: any) => {
-    if (playerEqBadge) playerEqBadge.textContent = `EQ: ${data.preset}`;
+    if (playerEqBadge) playerEqBadge.textContent = `EQ: ${audioEngine.currentPresetLabel}`;
   });
 
   audioEngine.on('sleeptimertick', (secRemaining: number) => {
@@ -283,13 +298,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     dockButtons.forEach(btn => {
       const viewId = btn.getAttribute('data-view');
-      const icon = btn.querySelector('svg');
       if (viewId === targetViewId) {
         btn.className = 'nav-dock-btn flex-1 py-2 rounded-full flex flex-col items-center gap-1 text-sonic-green font-bold text-[10px] transition-all';
-        if (icon) icon.setAttribute('fill', 'currentColor');
       } else {
         btn.className = 'nav-dock-btn flex-1 py-2 rounded-full flex flex-col items-center gap-1 text-white/50 hover:text-white font-medium text-[10px] transition-all';
-        if (icon) icon.setAttribute('fill', 'none');
       }
     });
 
@@ -363,7 +375,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       <div class="flex items-center justify-between p-2.5 rounded-2xl hover:bg-white/5 transition-all cursor-pointer group" data-lib-idx="${idx}">
         <div class="flex items-center gap-3 min-w-0 flex-1">
           <div class="relative w-11 h-11 rounded-xl overflow-hidden flex-shrink-0 bg-obsidian-800 border border-white/10">
-            <img src="${escapeHtml(t.cover_url || '')}" alt="Cover" class="w-full h-full object-cover" onerror="this.style.display='none'" />
+            <img src="${escapeHtml(t.cover_url || '')}" alt="Cover" class="w-full h-full object-cover" data-hide-on-error />
           </div>
           <div class="min-w-0 flex-1">
             <h4 class="text-xs font-semibold text-white truncate">${escapeHtml(t.name)}</h4>
@@ -407,6 +419,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const downloadedContainer = document.getElementById('downloaded-tracks-list');
   const downloadedCountBadge = document.getElementById('downloaded-count-badge');
   const downloadTasksBadge = document.getElementById('download-tasks-badge');
+  const pauseDownloadsButton = document.getElementById('btn-pause-downloads') as HTMLButtonElement | null;
   const navDownloadsBadge = document.getElementById('nav-downloads-badge');
   const tabBtnDownloaded = document.getElementById('tab-btn-downloaded');
   const tabBtnTasks = document.getElementById('tab-btn-tasks');
@@ -447,7 +460,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       <div class="flex items-center justify-between p-3 rounded-2xl bg-obsidian-800/80 border border-white/10 hover:border-sonic-green/30 transition-all cursor-pointer group" data-dl-idx="${idx}">
         <div class="flex items-center gap-3 min-w-0 flex-1">
           <div class="relative w-12 h-12 rounded-xl overflow-hidden flex-shrink-0 bg-obsidian-900 border border-white/10">
-            <img src="${escapeHtml(t.cover_url || './logo.png')}" alt="Cover" class="w-full h-full object-cover" onerror="this.src='./logo.png'" />
+            <img src="${escapeHtml(t.cover_url || './logo.png')}" alt="Cover" class="w-full h-full object-cover" data-fallback="./logo.png" />
             <div class="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" class="text-sonic-green"><polygon points="5 3 19 12 5 21 5 3"/></svg>
             </div>
@@ -506,6 +519,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const active = tasks.some(t => t.status === 'downloading' || t.status === 'queued');
     if (navDownloadsBadge) navDownloadsBadge.classList.toggle('hidden', !active);
     if (downloadTasksBadge) downloadTasksBadge.textContent = tasks.length.toString();
+    if (pauseDownloadsButton) pauseDownloadsButton.textContent = downloadEngine.isPaused ? 'Continuar' : 'Pausar';
 
     // If any completed, refresh downloaded library
     if (tasks.some(t => t.status === 'completed')) {
@@ -551,16 +565,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       button.addEventListener('click', () => downloadEngine.cancel(button.dataset.trackId!));
     });
     downloadsContainer.querySelectorAll<HTMLButtonElement>('.download-retry').forEach(button => {
-      button.addEventListener('click', async () => {
-        const task = tasks.find(item => item.track.id === button.dataset.trackId);
-        if (!task) return;
-        button.disabled = true;
-        try { await downloadEngine.addDownload(task.track); }
-        catch (error: any) { await appDialog.alert(error.message || 'No se pudo reintentar la descarga.'); }
-        finally { button.disabled = false; }
-      });
+      button.addEventListener('click', () => downloadEngine.retry(button.dataset.trackId!));
     });
   });
+
+  pauseDownloadsButton?.addEventListener('click', () => downloadEngine.setPaused(!downloadEngine.isPaused));
 
   document.getElementById('btn-clear-downloads')?.addEventListener('click', () => {
     downloadEngine.clearFinished();

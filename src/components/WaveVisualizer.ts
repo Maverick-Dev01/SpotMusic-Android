@@ -15,7 +15,7 @@ export class WaveVisualizer {
     this.container = el;
 
     this.container.innerHTML = `
-      <div class="w-full flex flex-col gap-2 select-none">
+      <div class="waveform-shell w-full flex flex-col gap-2 select-none">
         <div class="relative w-full h-12 flex items-center cursor-pointer touch-none" id="waveform-touch-zone">
           <canvas id="waveform-canvas" class="w-full h-full"></canvas>
         </div>

@@ -102,3 +102,75 @@ test('clearing the queue cancels an unresolved play request', async () => {
   assert.equal(engine.currentTrack, null);
   assert.equal(played, false);
 });
+
+test('phone-safe audio profile is the default and device profiles persist', () => {
+  const values = new Map();
+  const engine = load('src/services/audioEngine.ts', {
+    '@capacitor/core': { Capacitor: { convertFileSrc: value => value } },
+    './localLibrary': { localLibrary: {} },
+    './streamResolver': { streamResolver: { resolveFullAudio: async () => null, clearCache() {} } }
+  }, {
+    Audio: FakeAudio,
+    navigator: {},
+    location: { href: 'https://localhost', origin: 'https://localhost' },
+    window: {},
+    localStorage: {
+      getItem: key => values.get(key) ?? null,
+      setItem: (key, value) => values.set(key, value)
+    }
+  }).audioEngine;
+  assert.equal(engine.currentPreset, 'Phone');
+  assert.equal(engine.currentBassBoost, -4);
+  engine.applyPreset('AntiBoom');
+  assert.equal(engine.currentPreset, 'AntiBoom');
+  assert.equal(engine.currentBassBoost, -6);
+  assert.equal(values.get('spotmusic_eq_preset'), 'AntiBoom');
+});
+
+test('audio matching rejects an unrelated track and prefers the exact title and artist', () => {
+  const { streamResolver } = load('src/services/streamResolver.ts', {
+    '@capacitor/core': { CapacitorHttp: { get: async () => ({ status: 500 }) } },
+    'crypto-js': { default: {} }
+  });
+  const candidates = [
+    { title: 'Hello Again', artist: 'Neil Diamond', durationMs: 240000, audioUrl: 'wrong', source: 'soundcloud' },
+    { title: 'Hello', artist: 'Adele', durationMs: 295000, audioUrl: 'right', source: 'soundcloud' }
+  ];
+  const match = streamResolver.bestMatch('Hello', 'Adele', 295000, candidates);
+  assert.equal(match.audioUrl, 'right');
+  assert.equal(streamResolver.bestMatch('Hello', 'Adele', 295000, [candidates[0]]), null);
+});
+
+test('official Spotify import follows every playlist page', async () => {
+  const calls = [];
+  const items = Array.from({ length: 120 }, (_, index) => ({
+    item: {
+      id: `track-${index}`,
+      type: 'track',
+      name: `Song ${index}`,
+      duration_ms: 180000,
+      artists: [{ name: 'Artist' }],
+      album: { name: 'Album', images: [] },
+      external_urls: { spotify: `https://open.spotify.com/track/${index}` },
+      external_ids: { isrc: `ISRC${index}` }
+    }
+  }));
+  const { spotifyClient } = load('src/services/spotifyClient.ts', {
+    '@capacitor/core': { CapacitorHttp: { get: async ({ url }) => {
+      calls.push(url);
+      if (url.endsWith('/playlists/1234567890123456789012')) {
+        return { status: 200, data: { name: 'Large list', description: '', images: [], owner: { display_name: 'Owner' }, tracks: { total: 120 } } };
+      }
+      const offset = Number(new URL(url).searchParams.get('offset') || 0);
+      const page = items.slice(offset, offset + 50);
+      return { status: 200, data: { total: 120, items: page, next: offset + page.length < 120 ? 'next' : null } };
+    } } }
+  }, {
+    sessionStorage: { getItem: () => null, setItem() {}, removeItem() {} }
+  });
+  spotifyClient.setAccessToken('test-token');
+  const result = await spotifyClient.fetchSpotifyEntity('https://open.spotify.com/playlist/1234567890123456789012');
+  assert.equal(result.tracks.length, 120);
+  assert.equal(result.partial, false);
+  assert.deepEqual(calls.filter(url => url.includes('/items?')).map(url => new URL(url).searchParams.get('offset')), ['0', '50', '100']);
+});

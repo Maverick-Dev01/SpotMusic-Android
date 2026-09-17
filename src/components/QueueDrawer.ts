@@ -119,7 +119,7 @@ export class QueueDrawer {
         <div class="group flex items-center justify-between p-2.5 rounded-2xl ${isCurrent ? 'bg-sonic-green/10 border border-sonic-green/30' : 'hover:bg-white/5'} transition-all cursor-pointer" data-index="${i}">
           <div class="flex items-center gap-3 min-w-0 flex-1">
             <div class="relative w-11 h-11 rounded-xl overflow-hidden flex-shrink-0 bg-obsidian-900 border border-white/10">
-              <img src="${escapeHtml(track.cover_url || '')}" alt="Cover" class="w-full h-full object-cover" onerror="this.style.display='none'" />
+              <img src="${escapeHtml(track.cover_url || '')}" alt="Cover" class="w-full h-full object-cover" data-hide-on-error />
               ${isCurrent ? `
                 <div class="absolute inset-0 bg-black/40 flex items-center justify-center">
                   <span class="w-2.5 h-2.5 rounded-full bg-sonic-green animate-ping"></span>

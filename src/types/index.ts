@@ -14,6 +14,8 @@ export interface Track {
   size?: string;
   addedAt?: number;
   isFavorite?: boolean;
+  externalUrl?: string;
+  isrc?: string;
 }
 
 export interface Playlist {
@@ -24,6 +26,8 @@ export interface Playlist {
   cover_url?: string;
   trackCount: number;
   tracks: Track[];
+  source?: 'local' | 'spotify';
+  sourceUrl?: string;
 }
 
 export type RepeatMode = 'off' | 'all' | 'one';
@@ -52,6 +56,8 @@ export interface DownloadTask {
   speed?: string;
   error?: string;
   quality?: string;
+  attempts?: number;
+  nextAttemptAt?: number;
 }
 
 export type DownloadQuality = '320k' | '192k' | '128k' | 'flac';

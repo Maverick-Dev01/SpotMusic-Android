@@ -172,6 +172,17 @@ class LocalLibrary {
     });
   }
 
+  public async savePlaylist(playlist: Playlist): Promise<void> {
+    const db = await this.getDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('playlists', 'readwrite');
+      playlist.trackCount = playlist.tracks.length;
+      tx.objectStore('playlists').put(playlist);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
   public async getAllPlaylists(): Promise<Playlist[]> {
     const db = await this.getDB();
     return new Promise((resolve, reject) => {

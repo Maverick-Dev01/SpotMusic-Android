@@ -3,6 +3,9 @@ import { licenseClient, licenseDetails } from '../services/licenseClient';
 import { updaterClient, UpdateInfo } from '../services/updaterClient';
 import { streamResolver } from '../services/streamResolver';
 import { downloadEngine } from '../services/downloadEngine';
+import { storagePicker } from '../services/storagePicker';
+import { spotifyAuth } from '../services/spotifyAuth';
+import { audioEngine } from '../services/audioEngine';
 
 export class SettingsModal {
   private overlay: HTMLElement;
@@ -108,7 +111,46 @@ export class SettingsModal {
             </div>
           </div>
 
-          <!-- SECTION 3: APARIENCIA Y TEMA -->
+          <!-- SECTION 3: SPOTIFY -->
+          <div class="rounded-2xl bg-obsidian-900/80 border border-white/10 p-3.5 space-y-3">
+            <div class="flex items-center justify-between gap-3">
+              <span class="font-bold text-white flex items-center gap-1.5">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" class="text-sonic-green"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.52 17.34c-.24.36-.66.48-1.02.24-2.82-1.74-6.36-2.1-10.56-1.14-.42.12-.78-.18-.9-.54-.12-.42.18-.78.54-.9 4.56-1.02 8.52-.6 11.64 1.32.42.18.48.66.3 1.02zm1.44-3.3c-.3.42-.84.6-1.26.3-3.24-1.98-8.16-2.58-11.94-1.38-.48.12-1.02-.12-1.14-.6-.12-.48.12-1.02.6-1.14C9.6 9.9 15 10.56 18.72 12.84c.36.18.54.78.24 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.3c-.6.18-1.2-.18-1.38-.72-.18-.6.18-1.2.72-1.38 4.26-1.26 11.28-1.02 15.72 1.62.54.3.72 1.02.42 1.56-.3.42-1.02.6-1.56.3z"/></svg>
+                <span>Importación de Spotify</span>
+              </span>
+              <span id="settings-spotify-status" class="px-2.5 py-0.5 rounded-full font-bold text-[10px] bg-white/10 text-white/60">Sin configurar</span>
+            </div>
+            <p class="text-[10px] leading-relaxed text-white/45">La conexión oficial permite recorrer todas las páginas disponibles de una playlist. Registra <span class="font-mono text-white/70">spotmusic-login://callback</span> como Redirect URI.</p>
+            <input id="settings-spotify-client-id" type="text" autocomplete="off" spellcheck="false" placeholder="Spotify Client ID" class="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white font-mono text-[11px] placeholder:text-white/30 focus:outline-none focus:border-sonic-green transition-all" />
+            <div class="grid grid-cols-2 gap-2">
+              <button id="btn-settings-save-spotify" class="py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white font-semibold text-xs active:scale-95 transition-all">Guardar Client ID</button>
+              <button id="btn-settings-connect-spotify" class="py-2 rounded-xl bg-sonic-green text-black font-bold text-xs active:scale-95 transition-all">Conectar Spotify</button>
+            </div>
+          </div>
+
+          <!-- SECTION 4: SALIDA DE AUDIO -->
+          <div class="rounded-2xl bg-obsidian-900/80 border border-white/10 p-3.5 space-y-3">
+            <div>
+              <span class="font-bold text-white flex items-center gap-1.5">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18 5a9 9 0 0 1 0 14"/></svg>
+                <span>Salida de audio</span>
+              </span>
+              <p class="text-[10px] text-white/45 mt-1">Elige el perfil que corresponde al teléfono, bocina o audífonos.</p>
+            </div>
+            <select id="settings-audio-profile" class="w-full bg-obsidian-800 border border-white/10 rounded-xl px-3 py-2 text-sonic-green font-bold focus:outline-none">
+              <option value="Phone">Altavoz del teléfono</option>
+              <option value="AntiBoom">Reducir retumbo</option>
+              <option value="Speaker">Bocina externa</option>
+              <option value="Headphones">Audífonos</option>
+              <option value="Flat">Plano / sin ajuste</option>
+            </select>
+            <div class="flex items-center justify-between gap-3 pt-1">
+              <p id="settings-audio-profile-help" class="text-[10px] leading-relaxed text-white/50">Reduce los subgraves para proteger altavoces pequeños.</p>
+              <button id="btn-settings-open-eq" class="flex-shrink-0 py-1.5 px-3 rounded-xl bg-white/10 text-sonic-green font-semibold text-xs">Ajuste fino</button>
+            </div>
+          </div>
+
+          <!-- SECTION 5: APARIENCIA Y TEMA -->
           <div class="rounded-2xl bg-obsidian-900/80 border border-white/10 p-3.5 space-y-3">
             <span class="font-bold text-white flex items-center gap-1.5">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
@@ -137,7 +179,7 @@ export class SettingsModal {
             </div>
           </div>
 
-          <!-- SECTION 4: CALIDAD Y DESCARGAS -->
+          <!-- SECTION 6: CALIDAD Y DESCARGAS -->
           <div class="rounded-2xl bg-obsidian-900/80 border border-white/10 p-3.5 space-y-3">
             <span class="font-bold text-white flex items-center gap-1.5">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
@@ -149,6 +191,17 @@ export class SettingsModal {
               <select id="settings-select-quality" class="w-full bg-obsidian-800 border border-white/10 rounded-xl px-3 py-2 text-sonic-green font-bold focus:outline-none">
                 <option value="source">Calidad original de la fuente</option>
               </select>
+            </div>
+
+            <div class="flex items-center justify-between gap-3 pt-2 border-t border-white/5">
+              <div class="min-w-0">
+                <p class="font-semibold text-white">Carpeta de descargas</p>
+                <p id="settings-storage-folder" class="text-[10px] text-white/50 truncate">Documents/SpotMusic</p>
+              </div>
+              <div class="flex gap-1.5 flex-shrink-0">
+                <button id="btn-settings-default-folder" class="hidden py-1.5 px-2.5 rounded-xl bg-white/5 text-white/70 text-xs">Predeterminada</button>
+                <button id="btn-settings-pick-folder" class="py-1.5 px-2.5 rounded-xl bg-white/10 text-sonic-green font-semibold text-xs">Elegir</button>
+              </div>
             </div>
 
             <div class="flex items-center justify-between pt-2 border-t border-white/5">
@@ -178,6 +231,43 @@ export class SettingsModal {
     });
 
     document.getElementById('btn-close-settings')?.addEventListener('click', () => this.close());
+
+    document.getElementById('btn-settings-save-spotify')?.addEventListener('click', async () => {
+      const input = document.getElementById('settings-spotify-client-id') as HTMLInputElement;
+      try {
+        spotifyAuth.setClientId(input?.value || '');
+        this.refreshSpotifyUI();
+        await appDialog.alert('Client ID guardado. Ahora conecta tu cuenta de Spotify.');
+      } catch (error: any) {
+        await appDialog.alert(error.message || 'No se pudo guardar el Client ID.');
+      }
+    });
+
+    document.getElementById('btn-settings-connect-spotify')?.addEventListener('click', async () => {
+      if (spotifyAuth.connected) {
+        spotifyAuth.disconnect();
+        this.refreshSpotifyUI();
+        return;
+      }
+      try {
+        await spotifyAuth.connect();
+      } catch (error: any) {
+        await appDialog.alert(error.message || 'No se pudo abrir la conexión con Spotify.');
+      }
+    });
+
+    spotifyAuth.subscribe(() => this.refreshSpotifyUI());
+
+    const audioProfile = document.getElementById('settings-audio-profile') as HTMLSelectElement;
+    audioProfile?.addEventListener('change', () => {
+      audioEngine.applyPreset(audioProfile.value);
+      this.refreshAudioUI();
+    });
+    document.getElementById('btn-settings-open-eq')?.addEventListener('click', () => {
+      this.close();
+      document.dispatchEvent(new CustomEvent('spotmusic:open-equalizer'));
+    });
+    audioEngine.on('eqchange', () => this.refreshAudioUI());
 
     // Copy Device ID
     document.getElementById('btn-settings-copy-device-id')?.addEventListener('click', async () => {
@@ -296,6 +386,21 @@ export class SettingsModal {
         downloadEngine.setQuality(selectQ.value);
       });
     }
+
+    document.getElementById('btn-settings-pick-folder')?.addEventListener('click', async () => {
+      if (!storagePicker.available) return await appDialog.alert('La selección de carpeta está disponible en Android.');
+      try {
+        await storagePicker.chooseDirectory();
+        await this.refreshStorageUI();
+      } catch (error: any) {
+        if (!/No se seleccionó/.test(error?.message || '')) await appDialog.alert(error?.message || 'No se pudo seleccionar la carpeta.');
+      }
+    });
+
+    document.getElementById('btn-settings-default-folder')?.addEventListener('click', async () => {
+      await storagePicker.useDefaultDirectory();
+      await this.refreshStorageUI();
+    });
 
     // Clear Cache
     document.getElementById('btn-settings-clear-cache')?.addEventListener('click', async () => {
@@ -449,6 +554,48 @@ export class SettingsModal {
     card?.classList.remove('scale-95');
     card?.classList.add('scale-100');
     this.refreshLicenseUI();
+    this.refreshStorageUI();
+    this.refreshSpotifyUI();
+    this.refreshAudioUI();
+  }
+
+  private refreshAudioUI() {
+    const select = document.getElementById('settings-audio-profile') as HTMLSelectElement | null;
+    const help = document.getElementById('settings-audio-profile-help');
+    const knownProfile = ['Phone', 'AntiBoom', 'Speaker', 'Headphones', 'Flat'].includes(audioEngine.currentPreset)
+      ? audioEngine.currentPreset
+      : 'Flat';
+    if (select) select.value = knownProfile;
+    const messages: Record<string, string> = {
+      Phone: 'Reduce subgraves y da claridad a los altavoces pequeños.',
+      AntiBoom: 'Recorta con mayor fuerza las frecuencias que producen retumbo.',
+      Speaker: 'Balance moderado para bocinas Bluetooth o externas.',
+      Headphones: 'Respuesta equilibrada para audífonos y manos libres.',
+      Flat: 'Mantiene la respuesta original, sin realces.'
+    };
+    if (help) help.textContent = messages[knownProfile];
+  }
+
+  private refreshSpotifyUI() {
+    const input = document.getElementById('settings-spotify-client-id') as HTMLInputElement | null;
+    const badge = document.getElementById('settings-spotify-status');
+    const button = document.getElementById('btn-settings-connect-spotify');
+    if (input && document.activeElement !== input) input.value = spotifyAuth.clientId;
+    if (badge) {
+      badge.textContent = spotifyAuth.connected ? 'Conectado ✓' : spotifyAuth.configured ? 'Listo para conectar' : 'Sin configurar';
+      badge.className = spotifyAuth.connected
+        ? 'px-2.5 py-0.5 rounded-full font-bold text-[10px] bg-sonic-green/20 text-sonic-green border border-sonic-green/30'
+        : 'px-2.5 py-0.5 rounded-full font-bold text-[10px] bg-white/10 text-white/60';
+    }
+    if (button) button.textContent = spotifyAuth.connected ? 'Desconectar' : 'Conectar Spotify';
+  }
+
+  private async refreshStorageUI() {
+    const label = document.getElementById('settings-storage-folder');
+    const reset = document.getElementById('btn-settings-default-folder');
+    const info = await storagePicker.getDirectory();
+    if (label) label.textContent = info.selected ? (info.label || 'Carpeta elegida') : 'Documents/SpotMusic';
+    reset?.classList.toggle('hidden', !info.selected);
   }
 
   public close() {

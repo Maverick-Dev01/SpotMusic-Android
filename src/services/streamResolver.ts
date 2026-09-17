@@ -10,6 +10,7 @@ export interface ResolvedAudio {
   coverUrl?: string;
   title?: string;
   artist?: string;
+  matchScore?: number;
 }
 
 class StreamResolver {
@@ -19,12 +20,12 @@ class StreamResolver {
   private pending = new Map<string, Promise<ResolvedAudio | null>>();
   public clearCache() { this.cache.clear(); this.cachedAt.clear(); }
 
-  public async resolveFullAudio(title: string, artist: string): Promise<ResolvedAudio | null> {
-    const key = `${this.cleanTitle(title)}---${artist}`.toLowerCase();
+  public async resolveFullAudio(title: string, artist: string, expectedDurationMs?: number): Promise<ResolvedAudio | null> {
+    const key = `${this.cleanTitle(title)}---${artist}---${expectedDurationMs || 0}`.toLowerCase();
     if (Date.now() - (this.cachedAt.get(key) || 0) > 300000) this.cache.delete(key);
     const existing = this.pending.get(key);
     if (existing) return existing;
-    const request = this.resolveUncached(title, artist).then(result => {
+    const request = this.resolveUncached(title, artist, expectedDurationMs).then(result => {
       if (result) this.cachedAt.set(key, Date.now());
       if (this.cache.size > 100) {
         const oldest = this.cache.keys().next().value;
@@ -109,8 +110,7 @@ class StreamResolver {
       );
       const url = decrypted.toString(CryptoJS.enc.Utf8);
       if (!url || !url.startsWith('http')) return null;
-      // Upgrade 96 kbps to full studio 320 kbps stream
-      return url.replace('_96.mp4', '_320.mp4');
+      return url;
     } catch (e) {
       return null;
     }
@@ -133,12 +133,63 @@ class StreamResolver {
       .trim();
   }
 
-  public async resolveJioSaavn(query: string): Promise<ResolvedAudio | null> {
+  private normalize(value: string): string {
+    return value
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/&/g, ' and ')
+      .replace(/\b(feat|ft|official|audio|video|lyrics?|remaster(?:ed)?|version)\b.*$/g, '')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+  }
+
+  private similarity(expected: string, actual: string): number {
+    const a = new Set(this.normalize(expected).split(' ').filter(Boolean));
+    const b = new Set(this.normalize(actual).split(' ').filter(Boolean));
+    if (!a.size || !b.size) return 0;
+    const intersection = [...a].filter(token => b.has(token)).length;
+    return (2 * intersection) / (a.size + b.size);
+  }
+
+  private matchScore(
+    title: string,
+    artist: string,
+    durationMs: number | undefined,
+    candidate: Pick<ResolvedAudio, 'title' | 'artist' | 'durationMs'>
+  ): number {
+    const titleScore = this.similarity(this.cleanTitle(title), candidate.title || '');
+    const artistScore = this.similarity(artist.split(',')[0], candidate.artist || '');
+    const durationScore = durationMs && candidate.durationMs
+      ? Math.max(0, 1 - Math.abs(durationMs - candidate.durationMs) / Math.max(durationMs, 1))
+      : 0.5;
+    // A matching title is mandatory. Artist and duration break ties between covers/remixes.
+    if (titleScore < 0.72 || artistScore < 0.25) return 0;
+    return titleScore * 0.65 + artistScore * 0.25 + durationScore * 0.1;
+  }
+
+  private bestMatch(
+    title: string,
+    artist: string,
+    durationMs: number | undefined,
+    candidates: ResolvedAudio[]
+  ): ResolvedAudio | null {
+    const ranked = candidates
+      .map(candidate => ({ candidate, score: this.matchScore(title, artist, durationMs, candidate) }))
+      .sort((a, b) => b.score - a.score);
+    const best = ranked[0];
+    if (!best || best.score < 0.72) return null;
+    return { ...best.candidate, matchScore: best.score };
+  }
+
+  public async resolveJioSaavn(title: string, artist: string, durationMs?: number): Promise<ResolvedAudio | null> {
     try {
-      const url = `https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&n=3&p=1&q=${encodeURIComponent(query)}`;
+      const query = `${this.cleanTitle(title)} ${artist}`.trim();
+      const url = `https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&n=10&p=1&q=${encodeURIComponent(query)}`;
       const data = await this.httpGet(url, {}, 3500);
       if (!data || !data.results || !data.results.length) return null;
 
+      const candidates: ResolvedAudio[] = [];
       for (const item of data.results) {
         if (item.encrypted_media_url) {
           const streamUrl = this.decryptJioMediaUrl(item.encrypted_media_url);
@@ -149,24 +200,26 @@ class StreamResolver {
             const artistDom = new DOMParser().parseFromString(item.singers || '', 'text/html');
             const cleanArtist = artistDom.body.textContent || item.singers;
 
-            return {
+            candidates.push({
               audioUrl: streamUrl,
               durationMs: durSec * 1000,
               durationStr: this.formatDuration(durSec),
-              format: '320 KBPS (Hi-Fi)',
+              format: 'Audio de la fuente',
               source: 'jiosaavn',
               coverUrl: item.image?.replace('150x150', '500x500'),
               title: cleanName,
               artist: cleanArtist
-            };
+            });
           }
         }
       }
+      return this.bestMatch(title, artist, durationMs, candidates);
     } catch (e) {}
     return null;
   }
 
-  public async resolveSoundCloud(query: string): Promise<ResolvedAudio | null> {
+  public async resolveSoundCloud(title: string, artist: string, durationMs?: number): Promise<ResolvedAudio | null> {
+    const query = `${this.cleanTitle(title)} ${artist}`.trim();
     const clientIds = [this.scClientId, ...this.backupScClientIds];
     for (const cId of clientIds) {
       try {
@@ -174,14 +227,15 @@ class StreamResolver {
         const data = await this.httpGet(url, {}, 3500);
         if (!data || !data.collection || !data.collection.length) continue;
 
+        const candidates: Array<{ result: ResolvedAudio; endpoint: string }> = [];
         for (const track of data.collection) {
           const prog = track.media?.transcodings?.find((t: any) => t.format?.protocol === 'progressive');
           if (prog) {
-            const streamData = await this.httpGet(`${prog.url}?client_id=${cId}`, {}, 3000);
-            if (streamData && streamData.url) {
-              const durSec = Math.round((track.duration || 180000) / 1000);
-              return {
-                audioUrl: streamData.url,
+            const durSec = Math.round((track.duration || 180000) / 1000);
+            candidates.push({
+              endpoint: `${prog.url}?client_id=${cId}`,
+              result: {
+                audioUrl: '',
                 durationMs: durSec * 1000,
                 durationStr: this.formatDuration(durSec),
                 format: 'MP3 Estándar (Full)',
@@ -189,10 +243,16 @@ class StreamResolver {
                 coverUrl: track.artwork_url?.replace('large', 't500x500'),
                 title: track.title,
                 artist: track.user?.username
-              };
-            }
+              }
+            });
           }
         }
+        const best = this.bestMatch(title, artist, durationMs, candidates.map(item => item.result));
+        if (!best) continue;
+        const selected = candidates.find(item => item.result.title === best.title && item.result.artist === best.artist);
+        if (!selected) continue;
+        const streamData = await this.httpGet(selected.endpoint, {}, 3000);
+        if (streamData?.url) return { ...best, audioUrl: streamData.url };
       } catch (e) {}
     }
     return null;
@@ -219,10 +279,9 @@ class StreamResolver {
     return null;
   }
 
-  private async resolveUncached(title: string, artist: string): Promise<ResolvedAudio | null> {
+  private async resolveUncached(title: string, artist: string, expectedDurationMs?: number): Promise<ResolvedAudio | null> {
     const cleanT = this.cleanTitle(title);
-    const query = `${cleanT} ${artist}`.trim();
-    const cacheKey = `${cleanT}---${artist}`.toLowerCase();
+    const cacheKey = `${cleanT}---${artist}---${expectedDurationMs || 0}`.toLowerCase();
 
     // Check memory cache for 0ms instant playback
     if (this.cache.has(cacheKey)) {
@@ -232,33 +291,15 @@ class StreamResolver {
     // Run JioSaavn and SoundCloud in PARALLEL for sub-second resolution
     try {
       const [jioRes, scRes] = await Promise.all([
-        this.resolveJioSaavn(query).catch(() => null),
-        this.resolveSoundCloud(query).catch(() => null)
+        this.resolveJioSaavn(cleanT, artist, expectedDurationMs).catch(() => null),
+        this.resolveSoundCloud(cleanT, artist, expectedDurationMs).catch(() => null)
       ]);
 
-      // Choose high-fidelity stream with duration > 60s
-      if (jioRes && jioRes.durationMs > 60000) {
-        this.cache.set(cacheKey, jioRes);
-        return jioRes;
-      }
-      if (scRes && scRes.durationMs > 60000) {
-        this.cache.set(cacheKey, scRes);
-        return scRes;
-      }
-
-      // Retry in parallel with just song title if artist caused a mismatch
-      const [jioTitleRes, scTitleRes] = await Promise.all([
-        this.resolveJioSaavn(cleanT).catch(() => null),
-        this.resolveSoundCloud(cleanT).catch(() => null)
-      ]);
-
-      if (jioTitleRes && jioTitleRes.durationMs > 60000) {
-        this.cache.set(cacheKey, jioTitleRes);
-        return jioTitleRes;
-      }
-      if (scTitleRes && scTitleRes.durationMs > 60000) {
-        this.cache.set(cacheKey, scTitleRes);
-        return scTitleRes;
+      const fullCandidates = [jioRes, scRes].filter((item): item is ResolvedAudio => !!item && item.durationMs > 60000);
+      const best = fullCandidates.sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0))[0];
+      if (best) {
+        this.cache.set(cacheKey, best);
+        return best;
       }
     } catch (e) {
       console.warn('Fast parallel stream resolution notice:', e);

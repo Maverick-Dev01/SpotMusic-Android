@@ -23,6 +23,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(AppUpdaterPlugin.class);
+        registerPlugin(StoragePickerPlugin.class);
         super.onCreate(savedInstanceState);
         try {
             if (getBridge() != null && getBridge().getWebView() != null) {

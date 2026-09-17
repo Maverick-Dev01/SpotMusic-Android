@@ -19,12 +19,12 @@ export class VinylDeck {
 
   private render() {
     this.container.innerHTML = `
-      <div class="relative w-full aspect-square max-w-[310px] mx-auto flex items-center justify-center select-none">
+      <div class="deck-shell relative w-full aspect-square max-w-[310px] mx-auto flex items-center justify-center select-none">
         <!-- Dynamic Ambient Halo Glow -->
         <div id="deck-ambient-glow" class="absolute inset-0 rounded-full blur-3xl opacity-40 scale-105 pointer-events-none transition-all duration-1000" style="background: radial-gradient(circle, rgba(30, 215, 96, 0.4) 0%, rgba(139, 92, 246, 0.2) 60%, transparent 80%);"></div>
 
         <!-- Turntable Tonearm (Stylus decorative element) -->
-        <div class="absolute -top-3 -right-2 w-16 h-28 pointer-events-none z-20 opacity-80">
+        <div class="deck-tonearm absolute -top-3 -right-2 w-16 h-28 pointer-events-none z-20 opacity-80">
           <svg viewBox="0 0 60 110" fill="none" class="w-full h-full drop-shadow-lg">
             <circle cx="48" cy="12" r="8" fill="#2A2F3D" stroke="#4B5563" stroke-width="2"/>
             <circle cx="48" cy="12" r="4" fill="#9CA3AF"/>
@@ -34,7 +34,7 @@ export class VinylDeck {
         </div>
 
         <!-- Vinyl Disc / Album Cover Interactive Disc -->
-        <div id="deck-disc" class="relative w-[270px] h-[270px] rounded-full cursor-pointer shadow-2xl flex items-center justify-center transition-transform duration-700 active:scale-95" style="background: radial-gradient(circle, #0B0E14 0%, #151922 45%, #0B0E14 70%, #1A202C 95%, #0B0E14 100%); box-shadow: 0 20px 50px -10px rgba(0,0,0,0.8), inset 0 0 0 2px rgba(255,255,255,0.08);">
+        <div id="deck-disc" class="deck-disc relative w-[270px] h-[270px] rounded-full cursor-pointer shadow-2xl flex items-center justify-center transition-transform duration-700 active:scale-95" style="background: radial-gradient(circle, #0B0E14 0%, #151922 45%, #0B0E14 70%, #1A202C 95%, #0B0E14 100%); box-shadow: 0 20px 50px -10px rgba(0,0,0,0.8), inset 0 0 0 2px rgba(255,255,255,0.08);">
           <!-- Vinyl Grooves concentric rings -->
           <div class="absolute inset-2 rounded-full border border-white/5 pointer-events-none"></div>
           <div class="absolute inset-5 rounded-full border border-white/5 pointer-events-none"></div>
@@ -47,7 +47,7 @@ export class VinylDeck {
           <div class="absolute inset-0 rounded-full bg-gradient-to-tr from-transparent via-white/5 to-transparent pointer-events-none opacity-60"></div>
 
           <!-- Center Label with Artwork -->
-          <div class="relative w-[110px] h-[110px] rounded-full overflow-hidden border-2 border-white/20 shadow-inner flex items-center justify-center bg-obsidian-800">
+          <div class="deck-label relative w-[110px] h-[110px] rounded-full overflow-hidden border-2 border-white/20 shadow-inner flex items-center justify-center bg-obsidian-800">
             <img id="deck-cover-img" src="" alt="Cover" class="w-full h-full object-cover select-none pointer-events-none" style="display: none;" />
             <!-- Default Placeholder Icon when no cover -->
             <div id="deck-placeholder" class="text-white/40 flex flex-col items-center justify-center">

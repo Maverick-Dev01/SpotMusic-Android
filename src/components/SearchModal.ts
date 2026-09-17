@@ -1,6 +1,7 @@
 import { appDialog } from './AppDialog';
 import { escapeHtml } from '../utils/html';
 import { spotifyClient, SpotifyPlaylistResult } from '../services/spotifyClient';
+import { spotifyAuth } from '../services/spotifyAuth';
 import { audioEngine } from '../services/audioEngine';
 import { downloadEngine } from '../services/downloadEngine';
 import { localLibrary } from '../services/localLibrary';
@@ -153,6 +154,7 @@ export class SearchModal {
     }
 
     try {
+      await spotifyAuth.ensureAccessToken();
       const sp = await spotifyClient.fetchSpotifyEntity(url);
       if (generation !== this.searchGeneration) return;
       this.currentSpotifyPlaylist = sp;
@@ -181,9 +183,10 @@ export class SearchModal {
     this.resultsContainer.innerHTML = `
       <!-- Spotify Playlist Header Card -->
       <div class="bg-obsidian-800/90 border border-white/10 rounded-2xl p-4 mb-3 space-y-3 shadow-xl">
+        ${sp.partial ? `<div class="rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-[10px] leading-relaxed text-amber-200">Vista parcial (${sp.tracks.length} canciones). Conecta Spotify en Ajustes para cargar todas las canciones accesibles.</div>` : ''}
         <div class="flex items-center gap-3.5">
           <div class="w-16 h-16 rounded-xl overflow-hidden bg-obsidian-900 border border-white/10 flex-shrink-0 shadow-md">
-            <img src="${escapeHtml(sp.cover_url || '/logo.png')}" alt="Cover" class="w-full h-full object-cover" onerror="this.src='/logo.png'" />
+            <img src="${escapeHtml(sp.cover_url || '/logo.png')}" alt="Cover" class="w-full h-full object-cover" data-fallback="/logo.png" />
           </div>
           <div class="min-w-0 flex-1">
             <span class="text-[9px] uppercase tracking-wider font-bold text-sonic-green px-2 py-0.5 rounded bg-sonic-green/10">Spotify ${sp.type.toUpperCase()}</span>
@@ -205,8 +208,8 @@ export class SearchModal {
           </button>
 
           <button id="btn-sp-save-app" class="py-2 px-2 rounded-xl bg-sonic-cyan/15 hover:bg-sonic-cyan/25 text-sonic-cyan font-bold text-xs flex items-center justify-center gap-1 active:scale-95 transition-all border border-sonic-cyan/30">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>
-            <span>A la App</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h10M4 11h10M4 16h7"/><path d="M17 5v11a2.5 2.5 0 1 1-2-2.45V7l5-1.5"/></svg>
+            <span>Guardar</span>
           </button>
         </div>
       </div>
@@ -218,7 +221,7 @@ export class SearchModal {
             <div class="flex items-center gap-3 min-w-0 flex-1 cursor-pointer btn-sp-play-track">
               <span class="text-[11px] font-mono text-white/30 w-5 text-center flex-shrink-0">${idx + 1}</span>
               <div class="relative w-10 h-10 rounded-xl overflow-hidden flex-shrink-0 bg-obsidian-800 border border-white/10">
-                <img src="${escapeHtml(t.cover_url || '')}" alt="Cover" class="w-full h-full object-cover" onerror="this.style.display='none'" />
+                <img src="${escapeHtml(t.cover_url || '')}" alt="Cover" class="w-full h-full object-cover" data-hide-on-error />
               </div>
               <div class="min-w-0 flex-1">
                 <h4 class="text-xs font-semibold text-white truncate">${escapeHtml(t.name)}</h4>
@@ -270,10 +273,17 @@ export class SearchModal {
     // 3. Save as Local App Playlist
     document.getElementById('btn-sp-save-app')?.addEventListener('click', async () => {
       try {
-        const created = await localLibrary.createPlaylist(sp.name);
-        for (const t of sp.tracks) {
-          await localLibrary.addTrackToPlaylist(created.id, t);
-        }
+        await localLibrary.savePlaylist({
+          id: `spotify-${sp.id}`,
+          name: sp.name,
+          description: sp.description,
+          owner: sp.owner,
+          cover_url: sp.cover_url,
+          trackCount: sp.tracks.length,
+          tracks: sp.tracks,
+          source: 'spotify',
+          sourceUrl: ''
+        });
         await appDialog.alert(`¡Playlist "${sp.name}" guardada en la app con éxito! La encontrarás en la pestaña Playlists.`);
       } catch (err: any) {
         await appDialog.alert('Error al guardar playlist: ' + (err.message || err));
@@ -353,7 +363,7 @@ export class SearchModal {
       <div class="flex items-center justify-between p-2.5 rounded-2xl hover:bg-white/5 active:scale-[0.98] transition-all cursor-pointer group" data-idx="${idx}">
         <div class="flex items-center gap-3 min-w-0 flex-1 pointer-events-none">
           <div class="relative w-11 h-11 rounded-xl overflow-hidden flex-shrink-0 bg-obsidian-800 border border-white/10">
-            <img src="${escapeHtml(t.cover_url || '/logo.png')}" alt="Cover" class="w-full h-full object-cover" onerror="this.src='/logo.png'" />
+            <img src="${escapeHtml(t.cover_url || '/logo.png')}" alt="Cover" class="w-full h-full object-cover" data-fallback="/logo.png" />
           </div>
           <div class="min-w-0 flex-1">
             <h4 class="text-xs font-semibold text-white truncate">${escapeHtml(t.name)}</h4>
