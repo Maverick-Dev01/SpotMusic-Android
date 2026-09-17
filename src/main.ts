@@ -11,12 +11,23 @@ import { QueueDrawer } from './components/QueueDrawer';
 import { EqualizerModal } from './components/EqualizerModal';
 import { SleepTimerModal } from './components/SleepTimerModal';
 import { SearchModal } from './components/SearchModal';
-import { LicenseModal } from './components/LicenseModal';
-import { UpdatesModal } from './components/UpdatesModal';
+import { SettingsModal } from './components/SettingsModal';
 import { PlaylistModal } from './components/PlaylistModal';
 import { updaterClient } from './services/updaterClient';
 
 document.addEventListener('DOMContentLoaded', async () => {
+  // 0. Restore Theme & Accent
+  const savedMode = localStorage.getItem('spotmusic_theme_mode') || 'dark';
+  if (savedMode === 'light') {
+    document.body.classList.add('theme-light');
+    document.documentElement.classList.remove('dark');
+  } else {
+    document.body.classList.remove('theme-light');
+    document.documentElement.classList.add('dark');
+  }
+  const savedAccent = localStorage.getItem('spotmusic_accent_color') || '#1ED760';
+  document.documentElement.style.setProperty('--accent-color', savedAccent);
+
   // 1. Initialize Components
   const vinylDeck = new VinylDeck('vinyl-deck-container');
   const waveVisualizer = new WaveVisualizer('waveform-container');
@@ -24,8 +35,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const equalizerModal = new EqualizerModal();
   const sleepTimerModal = new SleepTimerModal();
   const searchModal = new SearchModal();
-  const licenseModal = new LicenseModal();
-  const updatesModal = new UpdatesModal();
+  const settingsModal = new SettingsModal();
   const playlistModal = new PlaylistModal();
 
   // 2. DOM Elements
@@ -58,10 +68,31 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('btn-open-eq')?.addEventListener('click', () => equalizerModal.open());
   document.getElementById('btn-open-sleep')?.addEventListener('click', () => sleepTimerModal.open());
   document.getElementById('btn-open-search')?.addEventListener('click', () => searchModal.open());
-  document.getElementById('btn-open-license')?.addEventListener('click', () => licenseModal.open());
-  document.getElementById('btn-open-updates')?.addEventListener('click', () => updatesModal.open());
+  document.getElementById('btn-open-settings')?.addEventListener('click', () => settingsModal.open());
   document.getElementById('btn-open-playlists-tab')?.addEventListener('click', () => playlistModal.open());
   document.getElementById('nav-btn-playlists')?.addEventListener('click', () => playlistModal.open());
+
+  // In-Player Direct Download Button
+  const btnPlayerDownload = document.getElementById('btn-player-download');
+  btnPlayerDownload?.addEventListener('click', async () => {
+    const track = audioEngine.currentTrack;
+    if (!track) {
+      alert('Selecciona una canción primero para descargar.');
+      return;
+    }
+    try {
+      btnPlayerDownload.classList.add('text-sonic-green', 'scale-125');
+      setTimeout(() => btnPlayerDownload.classList.remove('scale-125'), 300);
+      const added = await downloadEngine.addDownload(track);
+      if (added) {
+        alert(`¡Descargando "${track.name}" en calidad completa! Revisa la pestaña Descargas.`);
+      } else {
+        alert(`"${track.name}" ya se encuentra en cola o descargada.`);
+      }
+    } catch (e: any) {
+      alert(e.message || 'Error al descargar canción');
+    }
+  });
 
   // Mini Player Events
   miniPlayerBar?.addEventListener('click', () => {
@@ -220,6 +251,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     if (targetViewId === 'view-library') refreshLibraryView();
+    if (targetViewId === 'view-downloads') renderDownloadedTracks();
   }
 
   dockButtons.forEach(btn => {
@@ -327,11 +359,114 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 7. Downloads Hub Controller
   const downloadsContainer = document.getElementById('downloads-tasks-container');
+  const downloadedContainer = document.getElementById('downloaded-tracks-list');
+  const downloadedCountBadge = document.getElementById('downloaded-count-badge');
+  const downloadTasksBadge = document.getElementById('download-tasks-badge');
   const navDownloadsBadge = document.getElementById('nav-downloads-badge');
+  const tabBtnDownloaded = document.getElementById('tab-btn-downloaded');
+  const tabBtnTasks = document.getElementById('tab-btn-tasks');
 
+  // Segmented Tabs: Descargadas vs En Progreso
+  tabBtnDownloaded?.addEventListener('click', () => {
+    tabBtnDownloaded.className = 'px-3.5 py-1.5 rounded-full text-xs font-bold bg-sonic-green text-black transition-all';
+    if (tabBtnTasks) tabBtnTasks.className = 'px-3.5 py-1.5 rounded-full text-xs font-medium bg-white/5 text-white/70 border border-white/10 transition-all';
+    downloadedContainer?.classList.remove('hidden');
+    downloadsContainer?.classList.add('hidden');
+    renderDownloadedTracks();
+  });
+
+  tabBtnTasks?.addEventListener('click', () => {
+    if (tabBtnTasks) tabBtnTasks.className = 'px-3.5 py-1.5 rounded-full text-xs font-bold bg-sonic-green text-black transition-all';
+    if (tabBtnDownloaded) tabBtnDownloaded.className = 'px-3.5 py-1.5 rounded-full text-xs font-medium bg-white/5 text-white/70 border border-white/10 transition-all';
+    downloadedContainer?.classList.add('hidden');
+    downloadsContainer?.classList.remove('hidden');
+  });
+
+  async function renderDownloadedTracks() {
+    if (!downloadedContainer) return;
+    const allTracks = await localLibrary.getAllTracks();
+    const dlTracks = allTracks.filter(t => t.isLocal || !!t.localPath);
+    if (downloadedCountBadge) downloadedCountBadge.textContent = dlTracks.length.toString();
+
+    if (!dlTracks.length) {
+      downloadedContainer.innerHTML = `
+        <div class="py-16 text-center text-white/40 flex flex-col items-center justify-center gap-3">
+          <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <p class="text-xs">No tienes canciones descargadas aún.<br/>Usa la lupa o el botón ⬇️ en el reproductor.</p>
+        </div>
+      `;
+      return;
+    }
+
+    downloadedContainer.innerHTML = dlTracks.map((t, idx) => `
+      <div class="flex items-center justify-between p-3 rounded-2xl bg-obsidian-800/80 border border-white/10 hover:border-sonic-green/30 transition-all cursor-pointer group" data-dl-idx="${idx}">
+        <div class="flex items-center gap-3 min-w-0 flex-1">
+          <div class="relative w-12 h-12 rounded-xl overflow-hidden flex-shrink-0 bg-obsidian-900 border border-white/10">
+            <img src="${t.cover_url || './logo.png'}" alt="Cover" class="w-full h-full object-cover" onerror="this.src='./logo.png'" />
+            <div class="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" class="text-sonic-green"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            </div>
+          </div>
+          <div class="min-w-0 flex-1">
+            <h4 class="text-xs font-bold text-white truncate">${t.name}</h4>
+            <p class="text-[11px] text-white/60 truncate">${t.artists}</p>
+            <div class="flex items-center gap-2 mt-1">
+              <span class="text-[9px] font-mono px-1.5 py-0.2 rounded bg-sonic-green/20 text-sonic-green font-semibold">${t.format || '320 KBPS'}</span>
+              <span class="text-[9px] font-mono text-white/40">${t.size || ''}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2 pl-2">
+          <button class="btn-play-dl w-9 h-9 rounded-full bg-sonic-green hover:bg-emerald-400 text-black flex items-center justify-center shadow-md active:scale-90 transition-all" data-dl-idx="${idx}" title="Reproducir ahora">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+          </button>
+          <button class="btn-del-dl p-2 text-white/30 hover:text-red-400 rounded-lg active:scale-90 transition-all" data-id="${t.id}" title="Eliminar archivo descargado">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18m-2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          </button>
+        </div>
+      </div>
+    `).join('');
+
+    // Click track row or play button
+    downloadedContainer.querySelectorAll('.btn-play-dl, [data-dl-idx]').forEach(el => {
+      el.addEventListener('click', (e) => {
+        if ((e.target as HTMLElement).closest('.btn-del-dl')) return;
+        const idxStr = el.getAttribute('data-dl-idx');
+        const idx = idxStr !== null ? parseInt(idxStr, 10) : 0;
+        audioEngine.playQueue(dlTracks, idx);
+        switchView('view-player');
+      });
+    });
+
+    // Delete track
+    downloadedContainer.querySelectorAll('.btn-del-dl').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const id = btn.getAttribute('data-id');
+        if (id && confirm('¿Deseas eliminar este archivo descargado?')) {
+          await localLibrary.deleteTrack(id);
+          renderDownloadedTracks();
+          refreshLibraryView();
+        }
+      });
+    });
+  }
+
+  // Initial render of downloaded tracks
+  renderDownloadedTracks();
+
+  // Active Downloads Subscription
   downloadEngine.subscribe((tasks) => {
     const active = tasks.some(t => t.status === 'downloading' || t.status === 'queued');
     if (navDownloadsBadge) navDownloadsBadge.classList.toggle('hidden', !active);
+    if (downloadTasksBadge) downloadTasksBadge.textContent = tasks.length.toString();
+
+    // If any completed, refresh downloaded library
+    if (tasks.some(t => t.status === 'completed')) {
+      renderDownloadedTracks();
+      refreshLibraryView();
+    }
 
     if (!downloadsContainer) return;
     if (!tasks.length) {
@@ -371,37 +506,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     downloadEngine.clearFinished();
   });
 
-  // Download Config Selectors
-  const selectQuality = document.getElementById('select-download-quality') as HTMLSelectElement | null;
-  const selectFolder = document.getElementById('select-download-folder') as HTMLSelectElement | null;
-
-  if (selectQuality) {
-    selectQuality.value = downloadEngine.quality;
-    selectQuality.addEventListener('change', () => {
-      downloadEngine.setQuality(selectQuality.value);
-    });
-  }
-
-  if (selectFolder) {
-    selectFolder.value = downloadEngine.downloadFolder;
-    selectFolder.addEventListener('change', () => {
-      downloadEngine.setDownloadFolder(selectFolder.value);
-    });
-  }
-
-  // 8. License Initial Sync
-  const licenseInfo = await licenseClient.checkLicense();
-  const topDot = document.getElementById('top-license-dot');
-  const topText = document.getElementById('top-license-text');
-  if (topDot && topText) {
-    if (licenseInfo.valid) {
-      topDot.className = 'w-2 h-2 rounded-full bg-sonic-green';
-      topText.textContent = 'Activa ✓';
-    } else {
-      topDot.className = 'w-2 h-2 rounded-full bg-yellow-400';
-      topText.textContent = 'Sin Licencia';
+  // 8. License State Reactive Sync
+  function updateSettingsBadge(info: any) {
+    const dot = document.getElementById('settings-status-dot');
+    if (dot) {
+      if (info.valid) {
+        dot.className = 'absolute top-0.5 right-0.5 w-2.5 h-2.5 rounded-full bg-sonic-green border-2 border-obsidian-900';
+      } else if (info.status === 'revoked') {
+        dot.className = 'absolute top-0.5 right-0.5 w-2.5 h-2.5 rounded-full bg-red-500 border-2 border-obsidian-900';
+      } else {
+        dot.className = 'absolute top-0.5 right-0.5 w-2.5 h-2.5 rounded-full bg-yellow-400 border-2 border-obsidian-900';
+      }
     }
   }
+
+  licenseClient.on('change', updateSettingsBadge);
+  const initialLicense = await licenseClient.checkLicense();
+  updateSettingsBadge(initialLicense);
 
   // Load sample initial song if library has any
   const existingTracks = await localLibrary.getAllTracks();
@@ -415,9 +536,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // 9. Silent Auto-Check for Updates on Launch
   try {
     const update = await updaterClient.checkForUpdates();
-    const badge = document.getElementById('badge-update-available');
-    if (update.hasUpdate && badge) {
-      badge.classList.remove('hidden');
+    const dot = document.getElementById('settings-status-dot');
+    if (update.hasUpdate && dot) {
+      dot.className = 'absolute top-0.5 right-0.5 w-2.5 h-2.5 rounded-full bg-sonic-cyan border-2 border-obsidian-900 animate-pulse';
     }
   } catch (e) {
     console.warn('Auto update check failed silently:', e);

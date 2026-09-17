@@ -11,9 +11,9 @@ export interface UpdateInfo {
 }
 
 class UpdaterClient {
-  public currentVersion = '1.0.4';
+  public currentVersion = '1.0.5';
   private repoOwner = 'Maverick-Dev01';
-  private repoName = 'SpotMusic';
+  private repoName = 'SpotMusic-Android';
 
   public async checkForUpdates(): Promise<UpdateInfo> {
     try {

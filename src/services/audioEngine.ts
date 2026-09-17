@@ -1,5 +1,7 @@
 import { Capacitor } from '@capacitor/core';
 import { Track, RepeatMode, EqualizerPreset } from '../types';
+import { localLibrary } from './localLibrary';
+import { streamResolver } from './streamResolver';
 
 export const EQ_PRESETS: Record<string, EqualizerPreset> = {
   'Flat': { name: 'Plano (Flat)', gains: [0, 0, 0, 0, 0], bassBoost: 0 },
@@ -145,24 +147,39 @@ class AudioEngine {
     this.currentIndex = index;
     const track = this.queue[index];
 
-    let audioUrl = track.audio_url || track.preview_url || track.localPath;
-    if (!audioUrl) {
+    let audioUrl = track.audio_url;
+
+    // 1. If local track, check if we have offline audio blob in IndexedDB (100% offline, zero-CORS)
+    if (track.isLocal || track.localPath) {
       try {
-        const query = encodeURIComponent(`${track.name} ${track.artists}`);
-        const itRes = await fetch(`https://itunes.apple.com/search?term=${query}&media=music&limit=1`);
-        if (itRes.ok) {
-          const itData = await itRes.json();
-          if (itData.results && itData.results.length > 0) {
-            audioUrl = itData.results[0].previewUrl;
-            track.audio_url = audioUrl || undefined;
-            track.preview_url = audioUrl || undefined;
-            if (!track.cover_url && itData.results[0].artworkUrl100) {
-              track.cover_url = itData.results[0].artworkUrl100.replace('100x100bb', '600x600bb');
-            }
+        const blob = await localLibrary.getAudioBlob(track.id);
+        if (blob) {
+          audioUrl = URL.createObjectURL(blob);
+        } else if (track.localPath) {
+          audioUrl = track.localPath;
+        }
+      } catch (e) {
+        console.warn('Local blob read notice:', e);
+      }
+    }
+
+    // 2. Resolve full audio stream if missing or if it is a 30s preview
+    const isPreview = !audioUrl || audioUrl.includes('apple.com') || audioUrl.includes('mzstatic') || audioUrl.includes('preview') || track.duration_ms === 30000;
+    if (isPreview && !track.isLocal) {
+      try {
+        const resolved = await streamResolver.resolveFullAudio(track.name, track.artists);
+        if (resolved) {
+          audioUrl = resolved.audioUrl;
+          track.audio_url = resolved.audioUrl;
+          track.duration_ms = resolved.durationMs;
+          track.duration_str = resolved.durationStr;
+          track.format = resolved.format;
+          if (resolved.coverUrl && !track.cover_url) {
+            track.cover_url = resolved.coverUrl;
           }
         }
       } catch (err) {
-        console.warn('Playback stream lookup error:', err);
+        console.warn('Full stream resolver error:', err);
       }
     }
 
@@ -171,8 +188,8 @@ class AudioEngine {
       return;
     }
 
-    // Convert native file:// URIs into WebView-safe Capacitor streaming URLs
-    if (audioUrl.startsWith('file://') || (track.isLocal && !audioUrl.startsWith('http'))) {
+    // Convert native file:// URIs into WebView-safe Capacitor streaming URLs if needed
+    if (audioUrl.startsWith('file://') || (track.isLocal && !audioUrl.startsWith('http') && !audioUrl.startsWith('blob:'))) {
       audioUrl = Capacitor.convertFileSrc(audioUrl);
     }
 

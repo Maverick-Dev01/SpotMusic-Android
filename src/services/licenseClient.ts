@@ -8,9 +8,21 @@ const STORAGE_KEY = 'spotmusic_mobile_license';
 class LicenseClient {
   private cachedLicense: LicenseInfo | null = null;
   private machineId: string = '';
+  private listeners: Set<(info: LicenseInfo) => void> = new Set();
 
   constructor() {
     this.initMachineId();
+  }
+
+  public on(event: 'change', cb: (info: LicenseInfo) => void) {
+    this.listeners.add(cb);
+    return () => this.listeners.delete(cb);
+  }
+
+  private notify(info: LicenseInfo) {
+    this.listeners.forEach(cb => {
+      try { cb(info); } catch (e) {}
+    });
   }
 
   private async initMachineId(): Promise<string> {
@@ -193,11 +205,18 @@ class LicenseClient {
   public removeLicense() {
     this.cachedLicense = null;
     localStorage.removeItem(STORAGE_KEY);
+    this.notify({
+      valid: false,
+      status: 'unlicensed',
+      clientName: 'Sin Licencia',
+      machineId: this.machineId
+    });
   }
 
   private saveLicense(info: LicenseInfo) {
     this.cachedLicense = info;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(info));
+    this.notify(info);
   }
 }
 

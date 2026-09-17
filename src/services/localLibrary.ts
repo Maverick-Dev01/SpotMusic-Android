@@ -1,7 +1,7 @@
 import { Track, Playlist } from '../types';
 
 const DB_NAME = 'SpotMusicDB';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 class LocalLibrary {
   private db: IDBDatabase | null = null;
@@ -33,6 +33,10 @@ class LocalLibrary {
         if (!db.objectStoreNames.contains('history')) {
           const histStore = db.createObjectStore('history', { keyPath: 'id', autoIncrement: true });
           histStore.createIndex('playedAt', 'playedAt', { unique: false });
+        }
+
+        if (!db.objectStoreNames.contains('audio_blobs')) {
+          db.createObjectStore('audio_blobs', { keyPath: 'id' });
         }
       };
 
@@ -78,6 +82,7 @@ class LocalLibrary {
 
   public async deleteTrack(id: string): Promise<void> {
     const db = await this.getDB();
+    await this.deleteAudioBlob(id);
     return new Promise((resolve, reject) => {
       const tx = db.transaction('tracks', 'readwrite');
       const store = tx.objectStore('tracks');
@@ -85,6 +90,44 @@ class LocalLibrary {
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
+  }
+
+  // Audio Blob operations (100% offline, zero CORS issues)
+  public async saveAudioBlob(id: string, blob: Blob): Promise<void> {
+    const db = await this.getDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('audio_blobs', 'readwrite');
+      const store = tx.objectStore('audio_blobs');
+      store.put({ id, blob, savedAt: Date.now() });
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  public async getAudioBlob(id: string): Promise<Blob | null> {
+    const db = await this.getDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('audio_blobs', 'readonly');
+      const store = tx.objectStore('audio_blobs');
+      const req = store.get(id);
+      req.onsuccess = () => {
+        resolve(req.result ? req.result.blob : null);
+      };
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  public async deleteAudioBlob(id: string): Promise<void> {
+    try {
+      const db = await this.getDB();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction('audio_blobs', 'readwrite');
+        const store = tx.objectStore('audio_blobs');
+        store.delete(id);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    } catch (e) {}
   }
 
   public async toggleFavorite(track: Track): Promise<boolean> {

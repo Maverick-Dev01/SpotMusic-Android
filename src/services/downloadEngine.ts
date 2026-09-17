@@ -2,6 +2,7 @@ import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Track, DownloadTask } from '../types';
 import { localLibrary } from './localLibrary';
 import { licenseClient } from './licenseClient';
+import { streamResolver } from './streamResolver';
 
 type DownloadProgressCallback = (tasks: DownloadTask[]) => void;
 
@@ -97,26 +98,22 @@ class DownloadEngine {
     this.notify();
 
     const track = task.track;
-    let url = track.audio_url || track.preview_url;
+    let url = track.audio_url;
 
-    // Automatic stream resolution fallback if missing
-    if (!url) {
+    // Resolve full audio stream if missing or preview
+    if (!url || url.includes('apple.com') || url.includes('mzstatic') || url.includes('preview') || track.duration_ms === 30000) {
       try {
-        const query = encodeURIComponent(`${track.name} ${track.artists}`);
-        const itRes = await fetch(`https://itunes.apple.com/search?term=${query}&media=music&limit=1`);
-        if (itRes.ok) {
-          const itData = await itRes.json();
-          if (itData.results && itData.results.length > 0) {
-            url = itData.results[0].previewUrl;
-            track.audio_url = url || undefined;
-            track.preview_url = url || undefined;
-            if (!track.cover_url && itData.results[0].artworkUrl100) {
-              track.cover_url = itData.results[0].artworkUrl100.replace('100x100bb', '600x600bb');
-            }
-          }
+        const resolved = await streamResolver.resolveFullAudio(track.name, track.artists);
+        if (resolved) {
+          url = resolved.audioUrl;
+          track.audio_url = resolved.audioUrl;
+          track.duration_ms = resolved.durationMs;
+          track.duration_str = resolved.durationStr;
+          track.format = resolved.format;
+          if (resolved.coverUrl) track.cover_url = resolved.coverUrl;
         }
       } catch (err) {
-        console.warn('Fallback stream lookup error:', err);
+        console.warn('Stream resolver error during download:', err);
       }
     }
 
@@ -128,7 +125,6 @@ class DownloadEngine {
     }
 
     try {
-      // Simulate/stream audio file download
       task.percent = 30;
       this.notify();
 
@@ -139,8 +135,14 @@ class DownloadEngine {
       this.notify();
 
       const blob = await response.blob();
-      const reader = new FileReader();
+      
+      // Save Blob directly to IndexedDB for instant, zero-CORS offline playback
+      await localLibrary.saveAudioBlob(track.id, blob);
 
+      task.percent = 80;
+      this.notify();
+
+      const reader = new FileReader();
       const base64Data = await new Promise<string>((resolve, reject) => {
         reader.onloadend = () => {
           const res = reader.result as string;
@@ -151,14 +153,14 @@ class DownloadEngine {
         reader.readAsDataURL(blob);
       });
 
-      task.percent = 85;
+      task.percent = 90;
       this.notify();
 
-      const filename = `${track.artists} - ${track.name}.mp3`.replace(/[\/\\?%*:|"<>]/g, '_');
+      const ext = url.includes('.mp4') ? 'm4a' : 'mp3';
+      const filename = `${track.artists} - ${track.name}.${ext}`.replace(/[\/\\?%*:|"<>]/g, '_');
       let localPath = '';
 
       try {
-        // Attempt saving to device filesystem in configured folder
         const writeRes = await Filesystem.writeFile({
           path: `${this.downloadFolder}/${filename}`,
           data: base64Data,
@@ -167,8 +169,7 @@ class DownloadEngine {
         });
         localPath = writeRes.uri;
       } catch (fsErr) {
-        console.warn('Filesystem write notice, keeping in app library:', fsErr);
-        localPath = URL.createObjectURL(blob);
+        console.warn('Filesystem write notice, saved in offline IndexedDB:', fsErr);
       }
 
       // Save to local offline library
@@ -177,7 +178,7 @@ class DownloadEngine {
         isLocal: true,
         localPath: localPath || url,
         audio_url: localPath || url,
-        format: this.quality.toUpperCase(),
+        format: track.format || this.quality.toUpperCase(),
         size: (blob.size / (1024 * 1024)).toFixed(1) + ' MB',
         addedAt: Date.now()
       };
