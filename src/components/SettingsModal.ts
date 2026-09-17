@@ -231,6 +231,7 @@ export class SettingsModal {
     document.getElementById('btn-settings-check-update')?.addEventListener('click', () => this.checkForUpdates());
 
     // Download & Install APK
+    let lastDownloadedApkPath = '';
     document.getElementById('btn-settings-download-apk')?.addEventListener('click', async () => {
       if (!this.currentUpdateInfo?.apkUrl || this.isUpdating) return;
       this.isUpdating = true;
@@ -242,22 +243,50 @@ export class SettingsModal {
       const actionBtn = document.getElementById('btn-settings-download-apk') as HTMLButtonElement;
 
       if (progContainer) progContainer.classList.remove('hidden');
-      if (actionBtn) actionBtn.disabled = true;
-      if (statusMsg) statusMsg.textContent = 'Descargando paquete de actualización APK...';
+      if (actionBtn) {
+        actionBtn.disabled = true;
+        actionBtn.innerHTML = '<span class="text-xs font-bold animate-pulse">Descargando...</span>';
+      }
+      if (statusMsg) statusMsg.textContent = 'Descargando actualización directamente en la app...';
 
       try {
-        await updaterClient.downloadAndInstall(this.currentUpdateInfo.apkUrl, (pct) => {
+        const res = await updaterClient.downloadAndInstall(this.currentUpdateInfo.apkUrl, (pct) => {
           if (progBar) progBar.style.width = `${pct}%`;
           if (progPct) progPct.textContent = `${pct}%`;
         });
-        if (statusMsg) statusMsg.textContent = 'Abriendo instalador del sistema Android...';
+
+        if (res && res.path) {
+          lastDownloadedApkPath = res.path;
+        }
+
+        if (res && res.needsPermission) {
+          if (statusMsg) statusMsg.textContent = 'Habilita "Instalar apps desconocidas" en Ajustes y presiona Instalar.';
+          if (actionBtn) {
+            actionBtn.disabled = false;
+            actionBtn.innerHTML = '<span>Instalar Ahora</span>';
+            actionBtn.onclick = async () => {
+              await updaterClient.installApk(lastDownloadedApkPath);
+            };
+          }
+        } else {
+          if (statusMsg) statusMsg.textContent = '¡Descarga completada! Abriendo instalador de Android...';
+          if (actionBtn) {
+            actionBtn.disabled = false;
+            actionBtn.innerHTML = '<span>Instalar Ahora</span>';
+            actionBtn.onclick = async () => {
+              await updaterClient.installApk(lastDownloadedApkPath);
+            };
+          }
+        }
       } catch (err: any) {
-        console.warn('In-app updater notice, fallback to browser:', err);
-        window.open(this.currentUpdateInfo.apkUrl, '_system');
-        if (statusMsg) statusMsg.textContent = 'Descargando mediante el navegador del sistema...';
+        console.warn('In-app updater notice:', err);
+        if (statusMsg) statusMsg.textContent = err.message || 'Error al descargar actualización.';
+        if (actionBtn) {
+          actionBtn.disabled = false;
+          actionBtn.innerHTML = '<span>Reintentar</span>';
+        }
       } finally {
         this.isUpdating = false;
-        if (actionBtn) actionBtn.disabled = false;
       }
     });
 

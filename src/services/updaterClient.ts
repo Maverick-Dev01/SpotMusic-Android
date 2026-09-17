@@ -1,5 +1,4 @@
-import { Capacitor } from '@capacitor/core';
-import { Filesystem, Directory } from '@capacitor/filesystem';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 
 export interface UpdateInfo {
   hasUpdate: boolean;
@@ -9,6 +8,26 @@ export interface UpdateInfo {
   apkName?: string;
   releaseNotes?: string;
 }
+
+export interface DownloadProgress {
+  percent: number;
+  downloaded: number;
+  total: number;
+}
+
+export interface AppUpdaterPluginType {
+  downloadAndInstall(options: { url: string }): Promise<{ success?: boolean; needsPermission?: boolean; path?: string }>;
+  installApk(options?: { path?: string }): Promise<{ success: boolean; needsPermission?: boolean }>;
+  canInstall(): Promise<{ allowed: boolean }>;
+  openInstallSettings(): Promise<void>;
+  addListener(
+    eventName: 'downloadProgress',
+    listenerFunc: (progress: DownloadProgress) => void
+  ): Promise<any>;
+  removeAllListeners(): Promise<void>;
+}
+
+export const AppUpdater = registerPlugin<AppUpdaterPluginType>('AppUpdater');
 
 class UpdaterClient {
   public currentVersion = '1.0.6';
@@ -78,34 +97,44 @@ class UpdaterClient {
     return false;
   }
 
-  public async downloadAndInstall(apkUrl: string, onProgress?: (pct: number) => void): Promise<void> {
+  public async downloadAndInstall(
+    apkUrl: string,
+    onProgress?: (pct: number) => void
+  ): Promise<{ success?: boolean; needsPermission?: boolean; path?: string }> {
     if (!apkUrl) throw new Error('URL de APK no disponible');
 
-    try {
-      onProgress?.(25);
-      // 1. Native background download using Capacitor Filesystem (No CORS, follows redirects)
-      const dlRes = await Filesystem.downloadFile({
-        url: apkUrl,
-        path: 'SpotMusic_Update.apk',
-        directory: Directory.Cache,
-        recursive: true
-      });
+    if (Capacitor.isNativePlatform()) {
+      let handle: any = null;
+      try {
+        if (onProgress) {
+          handle = await AppUpdater.addListener('downloadProgress', (data: DownloadProgress) => {
+            onProgress(data.percent);
+          });
+        }
 
-      onProgress?.(80);
-
-      const AppUpdater = (Capacitor.Plugins as any).AppUpdater;
-      if (AppUpdater && AppUpdater.installApk && dlRes.path) {
-        onProgress?.(100);
-        await AppUpdater.installApk({ path: dlRes.path });
-        return;
+        const res = await AppUpdater.downloadAndInstall({ url: apkUrl });
+        return res;
+      } finally {
+        if (handle && typeof handle.remove === 'function') {
+          handle.remove();
+        }
       }
-    } catch (e) {
-      console.warn('Native download failed, opening browser:', e);
+    } else {
+      window.open(apkUrl, '_blank');
+      return { success: true };
     }
+  }
 
-    // 2. Guaranteed fallback: Open in native Android browser/system download manager
-    onProgress?.(100);
-    window.open(apkUrl, '_system');
+  public async installApk(path?: string): Promise<void> {
+    if (Capacitor.isNativePlatform()) {
+      await AppUpdater.installApk({ path });
+    }
+  }
+
+  public async openInstallSettings(): Promise<void> {
+    if (Capacitor.isNativePlatform()) {
+      await AppUpdater.openInstallSettings();
+    }
   }
 }
 
