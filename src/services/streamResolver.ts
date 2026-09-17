@@ -125,12 +125,9 @@ class StreamResolver {
 
   private cleanTitle(title: string): string {
     return title
-      .replace(/\(feat\.[^)]+\)/gi, '')
-      .replace(/\(ft\.[^)]+\)/gi, '')
-      .replace(/\(official[^)]*\)/gi, '')
-      .replace(/\(video[^)]*\)/gi, '')
-      .replace(/\[official[^\]]*\]/gi, '')
-      .replace(/- remas.*$/i, '')
+      .replace(/\s*-\s*(Remaster(ed)?\s*\d*|Live|Radio Edit|Acoustic|Single Version|Bonus Track|Deluxe).*$/i, '')
+      .replace(/\s*\((feat\.|ft\.|with\b|remaster(ed)?|live|radio edit|acoustic|version|mono|stereo).*?\)/gi, '')
+      .replace(/\s*\[(feat\.|ft\.|with\b|remaster(ed)?|live|radio edit|acoustic|version|mono|stereo).*?\]/gi, '')
       .trim();
   }
 
@@ -160,13 +157,13 @@ class StreamResolver {
     candidate: Pick<ResolvedAudio, 'title' | 'artist' | 'durationMs'>
   ): number {
     const titleScore = this.similarity(this.cleanTitle(title), candidate.title || '');
-    const artistScore = this.similarity(artist.split(',')[0], candidate.artist || '');
+    const firstArtist = (artist || '').split(/[,&/]/)[0].trim();
+    const artistScore = this.similarity(firstArtist, candidate.artist || '');
     const durationScore = durationMs && candidate.durationMs
       ? Math.max(0, 1 - Math.abs(durationMs - candidate.durationMs) / Math.max(durationMs, 1))
-      : 0.5;
-    // A matching title is mandatory. Artist and duration break ties between covers/remixes.
-    if (titleScore < 0.72 || artistScore < 0.25) return 0;
-    return titleScore * 0.65 + artistScore * 0.25 + durationScore * 0.1;
+      : 0.8;
+    if (titleScore < 0.60 || (artistScore < 0.25 && !this.normalize(candidate.artist || '').includes(this.normalize(firstArtist)))) return 0;
+    return titleScore * 0.50 + artistScore * 0.30 + durationScore * 0.20;
   }
 
   private bestMatch(
@@ -179,7 +176,7 @@ class StreamResolver {
       .map(candidate => ({ candidate, score: this.matchScore(title, artist, durationMs, candidate) }))
       .sort((a, b) => b.score - a.score);
     const best = ranked[0];
-    if (!best || best.score < 0.72) return null;
+    if (!best || best.score < 0.60) return null;
     return { ...best.candidate, matchScore: best.score };
   }
 
@@ -256,27 +253,6 @@ class StreamResolver {
         if (streamData?.url) return { ...best, audioUrl: streamData.url };
       } catch (e) {}
     }
-    return null;
-  }
-
-  public async resolveFallbackPreview(title: string, artist: string): Promise<ResolvedAudio | null> {
-    try {
-      const q = encodeURIComponent(`${title} ${artist}`);
-      const data = await this.httpGet(`https://itunes.apple.com/search?term=${q}&media=music&limit=1`, {}, 3000);
-      if (data && data.results && data.results.length > 0) {
-        const item = data.results[0];
-        return {
-          audioUrl: item.previewUrl,
-          durationMs: (item.trackTimeMillis && item.trackTimeMillis > 40000) ? 30000 : (item.trackTimeMillis || 30000),
-          durationStr: '0:30',
-          format: 'Preview AAC',
-          source: 'fallback',
-          coverUrl: item.artworkUrl100?.replace('100x100bb', '600x600bb'),
-          title: item.trackName,
-          artist: item.artistName
-        };
-      }
-    } catch (e) {}
     return null;
   }
 

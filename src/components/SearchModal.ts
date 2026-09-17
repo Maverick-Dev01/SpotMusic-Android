@@ -102,7 +102,7 @@ export class SearchModal {
       if (q.includes('spotify.com') || q.startsWith('spotify:')) {
         debounceTimer = setTimeout(() => this.loadSpotifyEntity(q), 300);
       } else if (q.length > 1) {
-        debounceTimer = setTimeout(() => this.performSearch(q), 450);
+        debounceTimer = setTimeout(() => this.performSearch(q), 180);
       }
     });
 

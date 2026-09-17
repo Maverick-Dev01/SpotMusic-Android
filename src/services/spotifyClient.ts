@@ -270,16 +270,25 @@ class SpotifyClient {
     return '';
   }
 
-  // Search catalog across iTunes and open audio databases, or auto-fetch Spotify links
+  private searchCache: Map<string, { timestamp: number; data: SearchResults }> = new Map();
+
+  // Search catalog across Spotify Web API and iTunes with 0ms in-memory cache
   public async search(query: string): Promise<SearchResults> {
     const q = query.trim();
     if (!q) return { tracks: [], albums: [], playlists: [] };
+
+    // 0. Instant Cache Hit
+    const cacheKey = q.toLowerCase();
+    const cached = this.searchCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < 10 * 60 * 1000) {
+      return cached.data;
+    }
 
     // Auto-detect Spotify playlist / album links
     if (q.includes('spotify.com') || q.startsWith('spotify:')) {
       try {
         const sp = await this.fetchSpotifyEntity(q);
-        return {
+        const result: SearchResults = {
           tracks: sp.tracks,
           albums: [],
           playlists: [{
@@ -290,14 +299,73 @@ class SpotifyClient {
             trackCount: sp.total_tracks
           }]
         };
+        this.searchCache.set(cacheKey, { timestamp: Date.now(), data: result });
+        return result;
       } catch (err) {
         console.warn('Spotify direct link auto-fetch warning:', err);
       }
     }
 
+    // 1. Try Spotify Web API
+    const token = this.accessToken || localStorage.getItem('spotmusic_spotify_app_token') || localStorage.getItem('spotmusic_spotify_access_token_v2');
+    if (token) {
+      try {
+        const encoded = encodeURIComponent(q);
+        const res = await CapacitorHttp.get({
+          url: `https://api.spotify.com/v1/search?q=${encoded}&type=track,album&limit=10`,
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'User-Agent': 'SpotMusic-Android/1.0'
+          },
+          connectTimeout: 3500,
+          readTimeout: 3500
+        });
+
+        let data = res.data;
+        if (typeof data === 'string') {
+          try { data = JSON.parse(data); } catch {}
+        }
+
+        if (data && (data.tracks?.items?.length || data.albums?.items?.length)) {
+          const tracks: Track[] = (data.tracks?.items || []).map((t: any) => {
+            const artists = (t.artists || []).map((a: any) => a.name).join(', ') || 'Artista desconocido';
+            const durMs = t.duration_ms || 180000;
+            const mins = Math.floor(durMs / 60000);
+            const secs = Math.floor((durMs % 60000) / 1000);
+            return {
+              id: `sp-${t.id}`,
+              name: t.name,
+              artists,
+              album: t.album?.name || 'Sencillo',
+              duration_ms: durMs,
+              duration_str: `${mins}:${secs.toString().padStart(2, '0')}`,
+              cover_url: t.album?.images?.[0]?.url || null,
+              preview_url: null,
+              format: 'MP3'
+            };
+          });
+
+          const albums = (data.albums?.items || []).map((a: any) => ({
+            id: `sp-alb-${a.id}`,
+            name: a.name,
+            artist: (a.artists || []).map((art: any) => art.name).join(', ') || 'Varios Artistas',
+            cover_url: a.images?.[0]?.url || null,
+            trackCount: a.total_tracks || 1
+          }));
+
+          const results: SearchResults = { tracks, albums, playlists: [] };
+          this.searchCache.set(cacheKey, { timestamp: Date.now(), data: results });
+          return results;
+        }
+      } catch (spErr) {
+        console.warn('Spotify search notice, using iTunes fallback:', spErr);
+      }
+    }
+
+    // 2. Fast iTunes search fallback
     try {
       const encoded = encodeURIComponent(q);
-      const res = await fetch(`https://itunes.apple.com/search?term=${encoded}&entity=song&limit=35`);
+      const res = await fetch(`https://itunes.apple.com/search?term=${encoded}&entity=song&limit=25`);
       if (!res.ok) throw new Error(`Search failed: HTTP ${res.status}`);
 
       const data = await res.json();
@@ -315,8 +383,7 @@ class SpotifyClient {
           duration_ms: durMs,
           duration_str: `${mins}:${secs.toString().padStart(2, '0')}`,
           cover_url: cover,
-          preview_url: item.previewUrl || null,
-          audio_url: item.previewUrl || null,
+          preview_url: null,
           format: 'MP3'
         };
       });
@@ -335,11 +402,13 @@ class SpotifyClient {
         }
       });
 
-      return {
+      const itunesResults: SearchResults = {
         tracks,
         albums: Array.from(albumMap.values()).slice(0, 10),
         playlists: []
       };
+      this.searchCache.set(cacheKey, { timestamp: Date.now(), data: itunesResults });
+      return itunesResults;
     } catch (err: any) {
       console.error('Catalog search error:', err);
       return { tracks: [], albums: [], playlists: [] };

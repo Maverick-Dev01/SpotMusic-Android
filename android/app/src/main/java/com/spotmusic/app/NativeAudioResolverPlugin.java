@@ -58,60 +58,86 @@ public class NativeAudioResolverPlugin extends Plugin {
 
         String key = sha256((title + "\n" + artist).toLowerCase());
         File audioFile = findCachedFile(directory, key);
-        if (audioFile == null) {
-            YtDlp.init(getContext().getApplicationContext());
-            String query = title + " " + artist + " official audio";
-            String outputTemplate = new File(directory, key + ".%(ext)s").getAbsolutePath();
-            PyObject module = Python.getInstance().getModule("spotmusic_ytdlp");
-            String json = module.callAttr("resolve", query, outputTemplate).toJava(String.class);
-            JSONObject metadata = new JSONObject(json);
-            audioFile = new File(metadata.optString("filepath", ""));
-            if (!audioFile.exists()) audioFile = findCachedFile(directory, key);
+        if (audioFile != null && audioFile.length() >= MIN_AUDIO_BYTES) {
+            long actualDurationMs = readDuration(audioFile);
+            long durationMs = actualDurationMs > 0 ? actualDurationMs : expectedDurationMs;
+            JSObject result = new JSObject();
+            result.put("audioUrl", Uri.fromFile(audioFile).toString());
+            result.put("durationMs", durationMs);
+            result.put("durationStr", formatDuration(durationMs));
+            result.put("format", extension(audioFile).toUpperCase() + " · audio completo");
+            result.put("source", "native");
+            result.put("title", title);
+            result.put("artist", artist);
+            result.put("size", audioFile.length());
+            return result;
+        }
 
-            String candidateTitle = metadata.optString("title", "");
-            String candidateArtist = metadata.optString("artist", "");
-            long candidateDurationMs = metadata.optLong("durationMs", 0L);
-            double titleScore = similarity(title, candidateTitle);
-            double artistScore = similarity(artist, candidateArtist + " " + candidateTitle);
-            if (titleScore < 0.40 || (titleScore < 0.68 && artistScore < 0.18)) {
-                if (audioFile != null) audioFile.delete();
-                throw new Exception("La coincidencia encontrada no corresponde al título y artista");
-            }
-            if (expectedDurationMs > 60_000 && candidateDurationMs > 0) {
-                double difference = Math.abs(candidateDurationMs - expectedDurationMs) / (double) expectedDurationMs;
-                if (difference > 0.38) {
-                    if (audioFile != null) audioFile.delete();
-                    throw new Exception("La coincidencia encontrada no corresponde a la duración de la canción");
-                }
+        YtDlp.init(getContext().getApplicationContext());
+        String query = title + " " + artist + " official audio";
+        String outputTemplate = new File(directory, key + ".%(ext)s").getAbsolutePath();
+        PyObject module = Python.getInstance().getModule("spotmusic_ytdlp");
+        String json = module.callAttr("resolve", query, outputTemplate).toJava(String.class);
+        JSONObject metadata = new JSONObject(json);
+
+        String streamUrl = metadata.optString("streamUrl", "");
+        String filepath = metadata.optString("filepath", "");
+        if (filepath != null && !filepath.isEmpty()) {
+            File downloadedFile = new File(filepath);
+            if (downloadedFile.exists() && downloadedFile.length() >= MIN_AUDIO_BYTES) {
+                audioFile = downloadedFile;
             }
         }
 
-        if (audioFile == null || audioFile.length() < MIN_AUDIO_BYTES) {
-            throw new Exception("No se encontró audio completo para esta canción");
+        String candidateTitle = metadata.optString("title", "");
+        String candidateArtist = metadata.optString("artist", "");
+        long candidateDurationMs = metadata.optLong("durationMs", 0L);
+        double titleScore = similarity(title, candidateTitle);
+        double artistScore = similarity(artist, candidateArtist + " " + candidateTitle);
+        if (titleScore < 0.40 || (titleScore < 0.68 && artistScore < 0.18)) {
+            if (audioFile != null) audioFile.delete();
+            throw new Exception("La coincidencia encontrada no corresponde al título y artista");
         }
-
-        long actualDurationMs = readDuration(audioFile);
-        if (expectedDurationMs > 60_000 && actualDurationMs > 0) {
-            double difference = Math.abs(actualDurationMs - expectedDurationMs) / (double) expectedDurationMs;
+        if (expectedDurationMs > 60_000 && candidateDurationMs > 0) {
+            double difference = Math.abs(candidateDurationMs - expectedDurationMs) / (double) expectedDurationMs;
             if (difference > 0.38) {
-                audioFile.delete();
+                if (audioFile != null) audioFile.delete();
                 throw new Exception("La coincidencia encontrada no corresponde a la duración de la canción");
             }
         }
 
-        audioFile.setLastModified(System.currentTimeMillis());
-        pruneCache(directory, audioFile);
-        long durationMs = actualDurationMs > 0 ? actualDurationMs : expectedDurationMs;
-        JSObject result = new JSObject();
-        result.put("audioUrl", Uri.fromFile(audioFile).toString());
-        result.put("durationMs", durationMs);
-        result.put("durationStr", formatDuration(durationMs));
-        result.put("format", extension(audioFile).toUpperCase() + " · audio completo");
-        result.put("source", "native");
-        result.put("title", title);
-        result.put("artist", artist);
-        result.put("size", audioFile.length());
-        return result;
+        if (audioFile != null && audioFile.length() >= MIN_AUDIO_BYTES) {
+            long actualDurationMs = readDuration(audioFile);
+            audioFile.setLastModified(System.currentTimeMillis());
+            pruneCache(directory, audioFile);
+            long durationMs = actualDurationMs > 0 ? actualDurationMs : expectedDurationMs;
+            JSObject result = new JSObject();
+            result.put("audioUrl", Uri.fromFile(audioFile).toString());
+            result.put("durationMs", durationMs);
+            result.put("durationStr", formatDuration(durationMs));
+            result.put("format", extension(audioFile).toUpperCase() + " · audio completo");
+            result.put("source", "native");
+            result.put("title", title);
+            result.put("artist", artist);
+            result.put("size", audioFile.length());
+            return result;
+        }
+
+        if (streamUrl != null && !streamUrl.isEmpty()) {
+            long durationMs = candidateDurationMs > 0 ? candidateDurationMs : expectedDurationMs;
+            JSObject result = new JSObject();
+            result.put("audioUrl", streamUrl);
+            result.put("durationMs", durationMs);
+            result.put("durationStr", formatDuration(durationMs));
+            result.put("format", "M4A · Audio completo");
+            result.put("source", "native");
+            result.put("title", title);
+            result.put("artist", artist);
+            result.put("size", 0);
+            return result;
+        }
+
+        throw new Exception("No se encontró audio completo para esta canción");
     }
 
     private File findCachedFile(File directory, String key) {
