@@ -21,7 +21,7 @@ export class WaveVisualizer {
         </div>
         <div class="flex justify-between items-center text-xs font-medium text-white/50 px-1">
           <span id="time-current">00:00</span>
-          <span id="badge-quality" class="text-[10px] px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-sonic-green font-mono">320 KBPS</span>
+          <span id="badge-quality" class="text-[10px] px-1.5 py-0.5 rounded bg-white/5 border border-white/10 text-sonic-green font-mono">Audio</span>
           <span id="time-total">00:00</span>
         </div>
       </div>
@@ -68,6 +68,20 @@ export class WaveVisualizer {
       const percent = (clickX / rect.width) * 100;
       audioEngine.seekPercent(percent);
     };
+
+    zone.tabIndex = 0;
+    zone.setAttribute('role', 'slider');
+    zone.setAttribute('aria-label', 'Posición de reproducción');
+    zone.setAttribute('aria-valuemin', '0');
+    zone.setAttribute('aria-valuenow', '0');
+    zone.setAttribute('aria-valuemax', '100');
+    zone.addEventListener('keydown', event => {
+      if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
+        event.preventDefault();
+        audioEngine.seek(audioEngine.currentTime + (event.key === 'ArrowRight' ? 5 : -5));
+      }
+    });
+    audioEngine.on('timeupdate', data => zone.setAttribute('aria-valuenow', String(Math.round(data.percent || 0))));
 
     zone.addEventListener('pointerdown', (e) => {
       this.isDragging = true;
@@ -146,7 +160,7 @@ export class WaveVisualizer {
           this.ctx.shadowBlur = 6;
         } else {
           // Subtle muted glass bar for unplayed region
-          this.ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+          this.ctx.fillStyle = document.body.classList.contains('theme-light') ? 'rgba(30, 41, 59, 0.25)' : 'rgba(255, 255, 255, 0.2)';
           this.ctx.shadowBlur = 0;
         }
 

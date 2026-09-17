@@ -1,3 +1,4 @@
+import { escapeHtml } from '../utils/html';
 import { audioEngine } from '../services/audioEngine';
 
 export class QueueDrawer {
@@ -118,7 +119,7 @@ export class QueueDrawer {
         <div class="group flex items-center justify-between p-2.5 rounded-2xl ${isCurrent ? 'bg-sonic-green/10 border border-sonic-green/30' : 'hover:bg-white/5'} transition-all cursor-pointer" data-index="${i}">
           <div class="flex items-center gap-3 min-w-0 flex-1">
             <div class="relative w-11 h-11 rounded-xl overflow-hidden flex-shrink-0 bg-obsidian-900 border border-white/10">
-              <img src="${track.cover_url || ''}" alt="Cover" class="w-full h-full object-cover" onerror="this.style.display='none'" />
+              <img src="${escapeHtml(track.cover_url || '')}" alt="Cover" class="w-full h-full object-cover" onerror="this.style.display='none'" />
               ${isCurrent ? `
                 <div class="absolute inset-0 bg-black/40 flex items-center justify-center">
                   <span class="w-2.5 h-2.5 rounded-full bg-sonic-green animate-ping"></span>
@@ -126,13 +127,13 @@ export class QueueDrawer {
               ` : ''}
             </div>
             <div class="min-w-0 flex-1">
-              <h4 class="text-xs font-semibold ${isCurrent ? 'text-sonic-green' : 'text-white'} truncate">${track.name}</h4>
-              <p class="text-[11px] text-white/50 truncate">${track.artists}</p>
+              <h4 class="text-xs font-semibold ${isCurrent ? 'text-sonic-green' : 'text-white'} truncate">${escapeHtml(track.name)}</h4>
+              <p class="text-[11px] text-white/50 truncate">${escapeHtml(track.artists)}</p>
             </div>
           </div>
 
           <div class="flex items-center gap-2 flex-shrink-0 pl-2">
-            <span class="text-[10px] font-mono text-white/40">${track.duration_str || '--:--'}</span>
+            <span class="text-[10px] font-mono text-white/40">${escapeHtml(track.duration_str || '--:--')}</span>
             <button class="btn-remove-queue-item p-1.5 text-white/30 hover:text-red-400 rounded-lg" data-index="${i}" title="Eliminar de cola">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
             </button>

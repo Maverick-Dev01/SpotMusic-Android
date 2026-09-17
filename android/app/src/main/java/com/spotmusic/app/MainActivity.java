@@ -71,13 +71,17 @@ public class MainActivity extends BridgeActivity {
             new Thread(() -> {
                 try {
                     URL currentUrl = new URL(urlString);
+                    if (!"https".equals(currentUrl.getProtocol()) || !"github.com".equals(currentUrl.getHost()) ||
+                        !currentUrl.getPath().startsWith("/Maverick-Dev01/SpotMusic-Android/releases/download/")) {
+                        throw new Exception("Origen de actualización no autorizado");
+                    }
                     HttpURLConnection conn = null;
                     int redirects = 0;
 
                     // Follow GitHub redirects (302 -> AWS S3) in pure native Java
                     while (redirects < 6) {
                         conn = (HttpURLConnection) currentUrl.openConnection();
-                        conn.setInstanceFollowRedirects(true);
+                        conn.setInstanceFollowRedirects(false);
                         conn.setRequestProperty("User-Agent", "Mozilla/5.0 SpotMusic-Android-Updater");
                         conn.setConnectTimeout(20000);
                         conn.setReadTimeout(30000);
@@ -88,7 +92,8 @@ public class MainActivity extends BridgeActivity {
                             status == 307 || status == 308) {
                             String location = conn.getHeaderField("Location");
                             if (location != null) {
-                                currentUrl = new URL(location);
+                                currentUrl = new URL(currentUrl, location);
+                                if (!"https".equals(currentUrl.getProtocol())) throw new Exception("Redirección insegura");
                                 conn.disconnect();
                                 redirects++;
                                 continue;
@@ -137,6 +142,10 @@ public class MainActivity extends BridgeActivity {
                     in.close();
                     conn.disconnect();
 
+                    if (downloaded == 0 || (totalBytes > 0 && downloaded != totalBytes)) {
+                        outFile.delete();
+                        throw new Exception("Descarga incompleta. Intenta nuevamente.");
+                    }
                     // Final progress emit
                     JSObject finalProgress = new JSObject();
                     finalProgress.put("percent", 100);
@@ -156,7 +165,7 @@ public class MainActivity extends BridgeActivity {
         @PluginMethod
         public void installApk(PluginCall call) {
             String path = call.getString("path");
-            File file = (path != null && !path.isEmpty()) ? new File(path.replace("file://", "")) : new File(getContext().getCacheDir(), "SpotMusic_Update.apk");
+            File file = new File(getContext().getCacheDir(), "SpotMusic_Update.apk");
             if (!file.exists()) {
                 call.reject("El archivo de actualización no existe o fue eliminado.");
                 return;
@@ -166,6 +175,14 @@ public class MainActivity extends BridgeActivity {
 
         private void launchInstaller(File file, PluginCall call) {
             try {
+                android.content.pm.PackageManager pm = getContext().getPackageManager();
+                android.content.pm.PackageInfo archive = pm.getPackageArchiveInfo(file.getAbsolutePath(), android.content.pm.PackageManager.GET_SIGNATURES);
+                android.content.pm.PackageInfo installed = pm.getPackageInfo(getContext().getPackageName(), android.content.pm.PackageManager.GET_SIGNATURES);
+                if (archive == null || !installed.packageName.equals(archive.packageName)) throw new Exception("APK inválido o de otra aplicación");
+                if (!java.util.Arrays.equals(installed.signatures, archive.signatures)) throw new Exception("La firma del APK no coincide con la aplicación instalada");
+                long nextVersion = Build.VERSION.SDK_INT >= 28 ? archive.getLongVersionCode() : archive.versionCode;
+                long currentVersion = Build.VERSION.SDK_INT >= 28 ? installed.getLongVersionCode() : installed.versionCode;
+                if (nextVersion <= currentVersion) throw new Exception("El APK debe tener un versionCode mayor que la versión instalada");
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     if (!getContext().getPackageManager().canRequestPackageInstalls()) {
                         Intent settingsIntent = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES);

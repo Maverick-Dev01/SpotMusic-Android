@@ -14,6 +14,27 @@ export interface ResolvedAudio {
 
 class StreamResolver {
   private cache: Map<string, ResolvedAudio> = new Map();
+
+  private cachedAt = new Map<string, number>();
+  private pending = new Map<string, Promise<ResolvedAudio | null>>();
+  public clearCache() { this.cache.clear(); this.cachedAt.clear(); }
+
+  public async resolveFullAudio(title: string, artist: string): Promise<ResolvedAudio | null> {
+    const key = `${this.cleanTitle(title)}---${artist}`.toLowerCase();
+    if (Date.now() - (this.cachedAt.get(key) || 0) > 300000) this.cache.delete(key);
+    const existing = this.pending.get(key);
+    if (existing) return existing;
+    const request = this.resolveUncached(title, artist).then(result => {
+      if (result) this.cachedAt.set(key, Date.now());
+      if (this.cache.size > 100) {
+        const oldest = this.cache.keys().next().value;
+        if (oldest) { this.cache.delete(oldest); this.cachedAt.delete(oldest); }
+      }
+      return result;
+    }).finally(() => this.pending.delete(key));
+    this.pending.set(key, request);
+    return request;
+  }
   private scClientId: string = 'Pb72ranhoyt6gw7hM7TkzUItXlMWSNSo';
   private backupScClientIds: string[] = [
     'Pb72ranhoyt6gw7hM7TkzUItXlMWSNSo',
@@ -198,7 +219,7 @@ class StreamResolver {
     return null;
   }
 
-  public async resolveFullAudio(title: string, artist: string): Promise<ResolvedAudio | null> {
+  private async resolveUncached(title: string, artist: string): Promise<ResolvedAudio | null> {
     const cleanT = this.cleanTitle(title);
     const query = `${cleanT} ${artist}`.trim();
     const cacheKey = `${cleanT}---${artist}`.toLowerCase();

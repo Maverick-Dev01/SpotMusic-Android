@@ -18,6 +18,8 @@ type AudioEventCallback = (data?: any) => void;
 
 class AudioEngine {
   private audio: HTMLAudioElement;
+  private playRequest = 0;
+  private objectUrl?: string;
   private audioCtx: AudioContext | null = null;
   private eqFilters: BiquadFilterNode[] = [];
   private bassBoostNode: BiquadFilterNode | null = null;
@@ -51,16 +53,44 @@ class AudioEngine {
     this.setupAudioListeners();
   }
 
+  public get equalizerAvailable(): boolean { return this.eqFilters.length === 5; }
+
   private initAudioContext() {
-    // Keep standard HTML5 audio output directly to system speakers
-    // This avoids cross-origin CORS muting on Android WebView for iTunes/external URLs
     if (this.audioCtx) return;
     try {
-      const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
-      if (!AudioCtxClass) return;
-      this.audioCtx = new AudioCtxClass();
-    } catch (err) {
-      console.warn('AudioContext notice:', err);
+      this.audioCtx = new AudioContext();
+      const source = this.audioCtx.createMediaElementSource(this.audio);
+      this.eqFilters = [60, 230, 910, 3600, 14000].map((frequency, index) => {
+        const filter = this.audioCtx!.createBiquadFilter();
+        filter.type = 'peaking';
+        filter.frequency.value = frequency;
+        filter.Q.value = 1;
+        filter.gain.value = this.currentGains[index];
+        return filter;
+      });
+      this.bassBoostNode = this.audioCtx.createBiquadFilter();
+      this.bassBoostNode.type = 'lowshelf';
+      this.bassBoostNode.frequency.value = 90;
+      this.bassBoostNode.gain.value = this.currentBassBoost;
+      this.masterGain = this.audioCtx.createGain();
+      this.analyser = this.audioCtx.createAnalyser();
+      this.analyser.fftSize = 128;
+      let previous: AudioNode = source;
+      for (const node of [...this.eqFilters, this.bassBoostNode, this.masterGain, this.analyser]) {
+        previous.connect(node);
+        previous = node;
+      }
+      previous.connect(this.audioCtx.destination);
+      this.updateHeadroom();
+    } catch (error) {
+      this.emit('error', new Error('No se pudo iniciar el ecualizador de este dispositivo.'));
+    }
+  }
+
+  private updateHeadroom() {
+    if (this.masterGain && this.audioCtx) {
+      const boost = Math.max(0, ...this.currentGains) + this.currentBassBoost;
+      this.masterGain.gain.setTargetAtTime(Math.pow(10, -boost / 20), this.audioCtx.currentTime, .03);
     }
   }
 
@@ -101,7 +131,12 @@ class AudioEngine {
     });
 
     this.audio.addEventListener('error', (e) => {
-      this.emit('error', e);
+      if (e.target !== this.audio || !this.currentTrack || !this.audio.getAttribute('src')) return;
+      if (this.currentTrack && !this.currentTrack.isLocal) {
+        this.currentTrack.audio_url = undefined;
+        streamResolver.clearCache();
+      }
+      this.emit('error', new Error('No se pudo cargar el audio. Intenta reproducirlo nuevamente.'));
     });
   }
 
@@ -144,17 +179,20 @@ class AudioEngine {
 
   public async playIndex(index: number) {
     if (index < 0 || index >= this.queue.length) return;
+    const request = ++this.playRequest;
+    this.audio.pause();
     this.currentIndex = index;
     const track = this.queue[index];
 
     let audioUrl = track.audio_url;
+    let newObjectUrl: string | undefined;
 
     // 1. If local track, check if we have offline audio blob in IndexedDB (100% offline, zero-CORS)
     if (track.isLocal || track.localPath) {
       try {
         const blob = await localLibrary.getAudioBlob(track.id);
         if (blob) {
-          audioUrl = URL.createObjectURL(blob);
+          audioUrl = newObjectUrl = URL.createObjectURL(blob);
         } else if (track.localPath) {
           audioUrl = track.localPath;
         }
@@ -183,6 +221,10 @@ class AudioEngine {
       }
     }
 
+    if (request !== this.playRequest) {
+      if (newObjectUrl) URL.revokeObjectURL(newObjectUrl);
+      return;
+    }
     if (!audioUrl) {
       this.emit('error', new Error('No se pudo encontrar el archivo de audio para reproducir'));
       return;
@@ -194,17 +236,39 @@ class AudioEngine {
     }
 
     this.audio.pause();
+    if (this.objectUrl) URL.revokeObjectURL(this.objectUrl);
+    this.objectUrl = newObjectUrl;
+    // Web Audio requires a readable same-origin source. Keep remote streams on direct output.
+    const localAudio = audioUrl.startsWith('blob:') || audioUrl.startsWith('data:') ||
+      (track.isLocal && new URL(audioUrl, location.href).origin === location.origin);
+    if (!localAudio && this.audioCtx) {
+      this.audio.removeAttribute('src');
+      this.audio.load();
+      void this.audioCtx.close();
+      this.audioCtx = null;
+      this.eqFilters = [];
+      this.bassBoostNode = null;
+      this.masterGain = null;
+      this.analyser = null;
+      this.audio = new Audio();
+      this.audio.preload = 'auto';
+      this.setupAudioListeners();
+    }
     this.audio.src = audioUrl;
+    if (localAudio) this.initAudioContext();
+    this.emit('eqavailability', this.equalizerAvailable);
     this.audio.load();
     this.audio.volume = 1.0;
     this.updateMediaSessionMetadata(track);
 
     try {
+      if (this.audioCtx?.state === 'suspended') await this.audioCtx.resume();
       await this.audio.play();
-      this.emit('play', track);
+      if (request !== this.playRequest) return;
       this.emit('trackchange', track);
       this.emit('queuechange', { queue: this.queue, currentIndex: this.currentIndex });
     } catch (e: any) {
+      if (request !== this.playRequest) return;
       console.warn('Playback error:', e);
       this.emit('error', e);
     }
@@ -228,6 +292,7 @@ class AudioEngine {
   }
 
   public pause() {
+    this.playRequest++;
     this.audio.pause();
   }
 
@@ -349,6 +414,9 @@ class AudioEngine {
   }
 
   public clearQueue() {
+    this.playRequest++;
+    if (this.objectUrl) URL.revokeObjectURL(this.objectUrl);
+    this.objectUrl = undefined;
     this.queue = [];
     this.currentIndex = -1;
     this.audio.src = '';
@@ -393,9 +461,10 @@ class AudioEngine {
     });
 
     if (this.bassBoostNode) {
-      this.bassBoostNode.gain.setTargetAtTime(this.currentBassBoost * 1.5, this.audioCtx?.currentTime || 0, 0.05);
+      this.bassBoostNode.gain.setTargetAtTime(this.currentBassBoost, this.audioCtx?.currentTime || 0, 0.05);
     }
 
+    this.updateHeadroom();
     this.emit('eqchange', {
       preset: this.currentPreset,
       gains: this.currentGains,
@@ -408,6 +477,7 @@ class AudioEngine {
     this.currentGains[bandIndex] = gainDb;
     this.currentPreset = 'Custom';
     this.eqFilters[bandIndex].gain.setTargetAtTime(gainDb, this.audioCtx?.currentTime || 0, 0.05);
+    this.updateHeadroom();
     this.emit('eqchange', {
       preset: this.currentPreset,
       gains: this.currentGains,
@@ -418,8 +488,9 @@ class AudioEngine {
   public setBassBoost(level: number) {
     this.currentBassBoost = Math.max(0, Math.min(10, level));
     if (this.bassBoostNode) {
-      this.bassBoostNode.gain.setTargetAtTime(this.currentBassBoost * 1.5, this.audioCtx?.currentTime || 0, 0.05);
+      this.bassBoostNode.gain.setTargetAtTime(this.currentBassBoost, this.audioCtx?.currentTime || 0, 0.05);
     }
+    this.updateHeadroom();
     this.emit('eqchange', {
       preset: this.currentPreset,
       gains: this.currentGains,
@@ -431,6 +502,11 @@ class AudioEngine {
   public getWaveformData(): Uint8Array {
     const arr = new Uint8Array(32);
     if (!this.isPlaying) return arr;
+    if (this.analyser) {
+      const bins = new Uint8Array(this.analyser.frequencyBinCount);
+      this.analyser.getByteFrequencyData(bins);
+      return bins.slice(0, 32);
+    }
     const t = (this.audio.currentTime || 0) * 5;
     for (let i = 0; i < 32; i++) {
       const v = Math.sin(t + i * 0.45) * 0.5 + Math.cos(t * 1.3 + i * 0.25) * 0.5;
@@ -455,9 +531,9 @@ class AudioEngine {
         this.emit('sleeptimerend');
       } else {
         // Fade out in last 15 seconds
-        if (remaining < 15000 && this.masterGain && this.audioCtx) {
+        if (remaining < 15000) {
           const factor = Math.max(0, remaining / 15000);
-          this.masterGain.gain.setValueAtTime(factor, this.audioCtx.currentTime);
+          this.audio.volume = factor;
         }
         this.emit('sleeptimertick', Math.ceil(remaining / 1000));
       }
@@ -473,6 +549,7 @@ class AudioEngine {
   }
 
   public cancelSleepTimer() {
+    this.audio.volume = 1;
     if (this.sleepTimerId) {
       clearInterval(this.sleepTimerId);
       this.sleepTimerId = null;
@@ -480,7 +557,7 @@ class AudioEngine {
     this.sleepTimerEndTimestamp = null;
     this.sleepOnTrackEnd = false;
     if (this.masterGain && this.audioCtx) {
-      this.masterGain.gain.setValueAtTime(1.0, this.audioCtx.currentTime);
+      this.updateHeadroom();
     }
     this.emit('sleeptimercancel');
   }

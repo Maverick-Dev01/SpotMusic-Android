@@ -26,6 +26,7 @@ export class EqualizerModal {
           </button>
         </div>
 
+        <p id="eq-availability" class="text-xs text-white/70 leading-relaxed"></p>
         <!-- Preset Pills -->
         <div class="flex gap-2 overflow-x-auto pb-1 scrollbar-none" id="eq-presets-container">
           ${Object.keys(EQ_PRESETS).map(key => `
@@ -69,6 +70,7 @@ export class EqualizerModal {
 
     document.body.appendChild(this.overlay);
     this.setupEvents();
+    audioEngine.on('eqavailability', () => this.updateAvailability());
   }
 
   private setupEvents() {
@@ -141,7 +143,16 @@ export class EqualizerModal {
     });
   }
 
+  private updateAvailability() {
+    const available = audioEngine.equalizerAvailable;
+    this.overlay.querySelectorAll<HTMLInputElement | HTMLButtonElement>('.eq-slider, .btn-eq-preset, #bass-boost-slider').forEach(control => control.disabled = !available);
+    this.overlay.querySelector('#eq-availability')!.textContent = available
+      ? 'Ecualizador activo para el audio local. Se ajusta el volumen para evitar distorsión.'
+      : 'Reproduce una canción descargada para usar el ecualizador. Las fuentes externas usan su salida original.';
+  }
+
   public open() {
+    this.updateAvailability();
     this.overlay.classList.remove('pointer-events-none', 'opacity-0');
     this.overlay.classList.add('opacity-100');
     const card = document.getElementById('eq-modal-card');

@@ -1,3 +1,5 @@
+import { App } from '@capacitor/app';
+import { version } from '../../package.json';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 
 export interface UpdateInfo {
@@ -30,15 +32,19 @@ export interface AppUpdaterPluginType {
 export const AppUpdater = registerPlugin<AppUpdaterPluginType>('AppUpdater');
 
 class UpdaterClient {
-  public currentVersion = '1.0.6';
+  public currentVersion = version;
+  private pendingPath?: string;
+  private pendingUrl?: string;
+  private downloading = false;
   private repoOwner = 'Maverick-Dev01';
   private repoName = 'SpotMusic-Android';
 
   public async checkForUpdates(): Promise<UpdateInfo> {
     try {
-      const res = await fetch(`https://api.github.com/repos/${this.repoOwner}/${this.repoName}/releases`);
+      if (Capacitor.isNativePlatform()) this.currentVersion = (await App.getInfo()).version;
+      const res = await fetch(`https://api.github.com/repos/${this.repoOwner}/${this.repoName}/releases`, { signal: AbortSignal.timeout(12000) });
       if (!res.ok) {
-        return { hasUpdate: false, currentVersion: this.currentVersion, latestVersion: this.currentVersion };
+        throw new Error(`No se pudo consultar GitHub (HTTP ${res.status}). Intenta más tarde.`);
       }
 
       const releases = await res.json();
@@ -52,6 +58,7 @@ class UpdaterClient {
       let apkName = '';
 
       for (const rel of releases) {
+        if (rel.draft || rel.prerelease || !/^v?\d+\.\d+\.\d+$/.test(rel.tag_name || '')) continue;
         if (Array.isArray(rel.assets)) {
           const apk = rel.assets.find((a: any) => a.name && a.name.toLowerCase().endsWith('.apk'));
           if (apk) {
@@ -81,7 +88,7 @@ class UpdaterClient {
       };
     } catch (e: any) {
       console.warn('Update check failed:', e.message);
-      return { hasUpdate: false, currentVersion: this.currentVersion, latestVersion: this.currentVersion };
+      throw e;
     }
   }
 
@@ -101,9 +108,18 @@ class UpdaterClient {
     apkUrl: string,
     onProgress?: (pct: number) => void
   ): Promise<{ success?: boolean; needsPermission?: boolean; path?: string }> {
-    if (!apkUrl) throw new Error('URL de APK no disponible');
+    const url = new URL(apkUrl);
+    if (url.protocol !== 'https:' || url.hostname !== 'github.com' ||
+        !url.pathname.startsWith(`/${this.repoOwner}/${this.repoName}/releases/download/`) ||
+        !url.pathname.toLowerCase().endsWith('.apk')) throw new Error('URL de actualización no autorizada');
+    if (this.downloading) throw new Error('Ya hay una actualización en curso');
 
     if (Capacitor.isNativePlatform()) {
+      if (this.pendingPath && this.pendingUrl === apkUrl) {
+        try { return await AppUpdater.installApk({ path: this.pendingPath }); }
+        catch (error) { this.pendingPath = undefined; throw error; }
+      }
+      this.downloading = true;
       let handle: any = null;
       try {
         if (onProgress) {
@@ -113,10 +129,13 @@ class UpdaterClient {
         }
 
         const res = await AppUpdater.downloadAndInstall({ url: apkUrl });
+        this.pendingPath = res.path;
+        this.pendingUrl = apkUrl;
         return res;
       } finally {
+        this.downloading = false;
         if (handle && typeof handle.remove === 'function') {
-          handle.remove();
+          await handle.remove();
         }
       }
     } else {

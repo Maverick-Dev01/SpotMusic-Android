@@ -1,3 +1,4 @@
+import { Capacitor } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Track, DownloadTask } from '../types';
 import { localLibrary } from './localLibrary';
@@ -39,6 +40,7 @@ class DownloadEngine {
   }
 
   public setDownloadFolder(folder: string) {
+    if (!/^[a-zA-Z0-9 _-]{1,60}$/.test(folder)) throw new Error('Nombre de carpeta no válido');
     localStorage.setItem('spotmusic_download_folder', folder);
   }
 
@@ -135,8 +137,9 @@ class DownloadEngine {
       return;
     }
 
+    if (this.isCancelled(task)) return;
     const ext = url.includes('.mp4') ? 'm4a' : 'mp3';
-    const filename = `${track.artists} - ${track.name}.${ext}`.replace(/[\/\\?%*:|"<>]/g, '_');
+    const filename = `${track.artists.slice(0, 60)} - ${track.name.slice(0, 80)} - ${track.id}.${ext}`.replace(/[\/\\?%*:|"<>]/g, '_');
     const relPath = `${this.downloadFolder}/${filename}`;
     let localPath = '';
     let fileSizeStr = 'Full Audio';
@@ -145,77 +148,35 @@ class DownloadEngine {
       task.percent = 30;
       this.notify();
 
-      // 1. Download file directly to device storage using Capacitor Filesystem native download
-      try {
-        const dlResult = await Filesystem.downloadFile({
-          url,
-          path: relPath,
-          directory: Directory.Documents,
-          recursive: true
-        });
-        if (dlResult && dlResult.path) {
-          localPath = dlResult.path;
+      if (Capacitor.isNativePlatform()) {
+        const result = await Filesystem.downloadFile({ url, path: relPath, directory: Directory.Documents, recursive: true });
+        if (!result.path) throw new Error('No se pudo guardar el archivo en el dispositivo');
+        localPath = result.path;
+        const stat = await Filesystem.stat({ path: relPath, directory: Directory.Documents });
+        if (!stat.size) throw new Error('El archivo descargado está vacío');
+        fileSizeStr = (stat.size / 1048576).toFixed(1) + ' MB';
+        if (this.isCancelled(task)) {
+          await Filesystem.deleteFile({ path: relPath, directory: Directory.Documents });
+          return;
         }
-      } catch (dlErr) {
-        console.warn('Filesystem.downloadFile notice:', dlErr);
+      } else {
+        const response = await fetch(url, { signal: AbortSignal.timeout(120000) });
+        if (!response.ok) throw new Error(`Descarga rechazada (HTTP ${response.status}). Intenta más tarde.`);
+        const blob = await response.blob();
+        if (!blob.size || /text|json/.test(blob.type)) throw new Error('El servidor no devolvió un archivo de audio');
+        if (this.isCancelled(task)) return;
+        await localLibrary.saveAudioBlob(track.id, blob);
+        fileSizeStr = (blob.size / 1048576).toFixed(1) + ' MB';
       }
-
-      task.percent = 60;
-      this.notify();
-
-      // 2. Fetch or create blob to store in IndexedDB for 100% offline instant playback
-      try {
-        let blob: Blob | null = null;
-        try {
-          const resp = await fetch(url);
-          if (resp.ok) {
-            blob = await resp.blob();
-          }
-        } catch {}
-
-        if (!blob && localPath) {
-          try {
-            const fileData = await Filesystem.readFile({
-              path: relPath,
-              directory: Directory.Documents
-            });
-            if (fileData && typeof fileData.data === 'string') {
-              const byteCharacters = atob(fileData.data);
-              const byteNumbers = new Array(byteCharacters.length);
-              for (let i = 0; i < byteCharacters.length; i++) {
-                byteNumbers[i] = byteCharacters.charCodeAt(i);
-              }
-              const byteArray = new Uint8Array(byteNumbers);
-              blob = new Blob([byteArray], { type: ext === 'm4a' ? 'audio/mp4' : 'audio/mpeg' });
-            }
-          } catch {}
-        }
-
-        if (blob) {
-          await localLibrary.saveAudioBlob(track.id, blob);
-          fileSizeStr = (blob.size / (1024 * 1024)).toFixed(1) + ' MB';
-        }
-      } catch (blobErr) {
-        console.warn('Audio blob cache notice:', blobErr);
-      }
-
       task.percent = 85;
       this.notify();
-
-      if (!localPath) {
-        const uriRes = await Filesystem.getUri({
-          path: relPath,
-          directory: Directory.Documents
-        }).catch(() => null);
-        if (uriRes) localPath = uriRes.uri;
-      }
 
       // Save to local offline library
       const localTrack: Track = {
         ...track,
         isLocal: true,
-        localPath: localPath || url,
-        audio_url: localPath || url,
+        localPath: localPath || undefined,
+        audio_url: localPath || undefined,
         format: track.format || this.quality.toUpperCase(),
         size: fileSizeStr,
         addedAt: Date.now()
@@ -227,6 +188,7 @@ class DownloadEngine {
       task.percent = 100;
       this.notify();
     } catch (err: any) {
+      if (this.isCancelled(task)) return;
       console.error('Download execution error:', err);
       task.status = 'error';
       task.error = err.message || 'Error en la descarga';
@@ -234,9 +196,11 @@ class DownloadEngine {
     }
   }
 
+  private isCancelled(task: DownloadTask): boolean { return task.status === 'cancelled'; }
+
   public cancel(trackId: string) {
-    const task = this.queue.find(t => t.track.id === trackId);
-    if (task) {
+    const task = this.queue.find(t => t.track.id === trackId && ['queued', 'downloading'].includes(t.status));
+    if (task && ['queued', 'downloading'].includes(task.status)) {
       task.status = 'cancelled';
       this.notify();
     }

@@ -1,4 +1,5 @@
-import { licenseClient } from '../services/licenseClient';
+import { appDialog } from './AppDialog';
+import { licenseClient, licenseDetails } from '../services/licenseClient';
 
 export class LicenseModal {
   private overlay: HTMLElement;
@@ -55,7 +56,7 @@ export class LicenseModal {
             <span>Activar Licencia</span>
           </button>
           <button id="btn-remove-license" class="hidden w-full py-2 rounded-xl bg-white/5 hover:bg-white/10 text-red-400 font-semibold text-xs transition-all active:scale-95">
-            <span>Desvincular Licencia</span>
+            <span>Quitar de esta app</span>
           </button>
         </div>
       </div>
@@ -82,8 +83,8 @@ export class LicenseModal {
       }
     });
 
-    document.getElementById('btn-remove-license')?.addEventListener('click', () => {
-      if (confirm('¿Deseas desvincular la licencia actual de este dispositivo?')) {
+    document.getElementById('btn-remove-license')?.addEventListener('click', async () => {
+      if (await appDialog.confirm('¿Quitar la licencia guardada en esta app? Esto no libera el dispositivo en KeyForge.')) {
         licenseClient.removeLicense();
         const input = document.getElementById('input-license-token') as HTMLTextAreaElement;
         if (input) input.value = '';
@@ -98,7 +99,7 @@ export class LicenseModal {
       const btn = document.getElementById('btn-activate-token') as HTMLButtonElement;
       const token = input?.value.trim() || '';
 
-      if (!token) return alert('Escribe o pega tu clave de licencia');
+      if (!token) return await appDialog.alert('Escribe o pega tu clave de licencia');
 
       btn.disabled = true;
       btn.innerHTML = '<span class="w-3.5 h-3.5 rounded-full border-2 border-black border-t-transparent animate-spin"></span>';
@@ -106,14 +107,14 @@ export class LicenseModal {
       try {
         const res = await licenseClient.activateToken(token);
         if (res.valid) {
-          alert('¡Licencia activada con éxito para ' + (res.clientName || 'tu dispositivo') + '!');
+          await appDialog.alert('¡Licencia activada con éxito para ' + (res.clientName || 'tu dispositivo') + '!');
           this.refreshUI();
           this.close();
         } else {
-          alert(res.error || 'No se pudo activar la licencia');
+          await appDialog.alert(res.error || 'No se pudo activar la licencia');
         }
       } catch (e: any) {
-        alert(e.message || 'Error al conectar');
+        await appDialog.alert(e.message || 'Error al conectar');
       } finally {
         btn.disabled = false;
         btn.innerHTML = '<span>Activar Licencia</span>';
@@ -131,6 +132,14 @@ export class LicenseModal {
     const removeBtn = document.getElementById('btn-remove-license');
 
     if (devIdSpan) devIdSpan.textContent = devId;
+    let details = document.getElementById('license-client-name-details');
+    if (!details && clientName) {
+      details = document.createElement('p');
+      details.id = 'license-client-name-details';
+      details.className = 'text-xs text-white/70 leading-relaxed';
+      clientName.parentElement?.after(details);
+    }
+    if (details) details.textContent = licenseDetails(info);
     if (clientName) clientName.textContent = info.clientName || 'Sin Registrar';
 
     if (removeBtn) {
@@ -146,7 +155,7 @@ export class LicenseModal {
         badge.textContent = 'Revocada ✗';
       } else {
         badge.className = 'px-2.5 py-0.5 rounded-full font-bold text-[10px] bg-yellow-500/20 text-yellow-400 border border-yellow-500/30';
-        badge.textContent = 'Sin Licencia';
+        badge.textContent = info.status === 'expired' ? 'Vencida' : 'Sin Licencia';
       }
     }
   }

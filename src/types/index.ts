@@ -38,7 +38,8 @@ export interface LicenseInfo {
   valid: boolean;
   status: 'active' | 'revoked' | 'expired' | 'unlicensed';
   clientName?: string;
-  expiresAt?: string;
+  expiresAt?: string | number;
+  licenseType?: string;
   machineId?: string;
   token?: string;
   error?: string;

@@ -1,3 +1,6 @@
+import { setupModalBehavior } from './utils/modalBehavior';
+import { appDialog } from './components/AppDialog';
+import { escapeHtml } from './utils/html';
 import { audioEngine } from './services/audioEngine';
 import { localLibrary } from './services/localLibrary';
 import { licenseClient } from './services/licenseClient';
@@ -44,6 +47,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const searchModal = new SearchModal();
   const settingsModal = new SettingsModal();
   const playlistModal = new PlaylistModal();
+  setupModalBehavior();
 
   // 2. DOM Elements
   const trackNameEl = document.getElementById('current-track-name');
@@ -84,7 +88,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   btnPlayerDownload?.addEventListener('click', async () => {
     const track = audioEngine.currentTrack;
     if (!track) {
-      alert('Selecciona una canción primero para descargar.');
+      await appDialog.alert('Selecciona una canción primero para descargar.');
       return;
     }
     try {
@@ -92,12 +96,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       setTimeout(() => btnPlayerDownload.classList.remove('scale-125'), 300);
       const added = await downloadEngine.addDownload(track);
       if (added) {
-        alert(`¡Descargando "${track.name}" en calidad completa! Revisa la pestaña Descargas.`);
+        await appDialog.alert(`¡Descargando "${track.name}" en calidad completa! Revisa la pestaña Descargas.`);
       } else {
-        alert(`"${track.name}" ya se encuentra en cola o descargada.`);
+        await appDialog.alert(`"${track.name}" ya se encuentra en cola o descargada.`);
       }
     } catch (e: any) {
-      alert(e.message || 'Error al descargar canción');
+      await appDialog.alert(e.message || 'Error al descargar canción');
     }
   });
 
@@ -118,6 +122,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 3. Playback Controls
   btnPlayPause?.addEventListener('click', () => {
+    if (!audioEngine.currentTrack && audioEngine.queue.length === 0) { searchModal.open(); return; }
     audioEngine.togglePlay();
   });
 
@@ -187,6 +192,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // 4. Audio Engine Event Listeners
+  audioEngine.on('error', (error: any) => {
+    void appDialog.alert(error?.message || 'No se pudo reproducir este audio. Comprueba la conexión o intenta otra canción.');
+  });
+
   audioEngine.on('play', () => {
     if (iconPlayHero) iconPlayHero.style.display = 'none';
     if (iconPauseHero) iconPauseHero.style.display = 'block';
@@ -214,6 +223,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   audioEngine.on('queuechange', ({ queue }: any) => {
+    updateMiniPlayerVisibility();
+    for (const button of [btnPrev, btnNext, btnPlayerFavorite]) {
+      if (button instanceof HTMLButtonElement) button.disabled = queue.length === 0;
+    }
+    if (!queue.length) {
+      if (trackNameEl) trackNameEl.textContent = 'Selecciona una canción';
+      if (trackArtistEl) trackArtistEl.textContent = 'Explora el catálogo o tu biblioteca';
+    }
     if (playerQueueCount) playerQueueCount.textContent = queue.length.toString();
   });
 
@@ -313,10 +330,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (btn) btn.innerHTML = '<span class="text-sonic-green font-bold animate-pulse">Buscando...</span>';
     try {
       const found = await localLibrary.scanDeviceAudio();
-      alert(`Escaneo completado: se encontraron y agregaron ${found.length} archivos de audio de tu dispositivo.`);
+      await appDialog.alert(`Escaneo completado: se encontraron y agregaron ${found.length} archivos de audio de tu dispositivo.`);
       refreshLibraryView();
     } catch (e: any) {
-      alert('Aviso al escanear almacenamiento: ' + (e.message || e));
+      await appDialog.alert('Aviso al escanear almacenamiento: ' + (e.message || e));
     } finally {
       if (btn) btn.innerHTML = originalHtml;
     }
@@ -346,17 +363,17 @@ document.addEventListener('DOMContentLoaded', async () => {
       <div class="flex items-center justify-between p-2.5 rounded-2xl hover:bg-white/5 transition-all cursor-pointer group" data-lib-idx="${idx}">
         <div class="flex items-center gap-3 min-w-0 flex-1">
           <div class="relative w-11 h-11 rounded-xl overflow-hidden flex-shrink-0 bg-obsidian-800 border border-white/10">
-            <img src="${t.cover_url || ''}" alt="Cover" class="w-full h-full object-cover" onerror="this.style.display='none'" />
+            <img src="${escapeHtml(t.cover_url || '')}" alt="Cover" class="w-full h-full object-cover" onerror="this.style.display='none'" />
           </div>
           <div class="min-w-0 flex-1">
-            <h4 class="text-xs font-semibold text-white truncate">${t.name}</h4>
-            <p class="text-[11px] text-white/50 truncate">${t.artists}</p>
+            <h4 class="text-xs font-semibold text-white truncate">${escapeHtml(t.name)}</h4>
+            <p class="text-[11px] text-white/50 truncate">${escapeHtml(t.artists)}</p>
           </div>
         </div>
 
         <div class="flex items-center gap-2 pl-2">
-          <span class="text-[10px] font-mono text-white/40">${t.duration_str || '--:--'}</span>
-          <button class="btn-lib-delete p-1.5 text-white/30 hover:text-red-400 rounded-lg" data-id="${t.id}" title="Eliminar de biblioteca">
+          <span class="text-[10px] font-mono text-white/40">${escapeHtml(t.duration_str || '--:--')}</span>
+          <button class="btn-lib-delete p-1.5 text-white/30 hover:text-red-400 rounded-lg" data-id="${escapeHtml(t.id)}" title="Eliminar de biblioteca">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18m-2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
           </button>
         </div>
@@ -377,7 +394,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
         const id = btn.getAttribute('data-id');
-        if (id && confirm('¿Deseas quitar esta canción de tu biblioteca?')) {
+        if (id && await appDialog.confirm('¿Deseas quitar esta canción de tu biblioteca?')) {
           await localLibrary.deleteTrack(id);
           refreshLibraryView();
         }
@@ -430,17 +447,17 @@ document.addEventListener('DOMContentLoaded', async () => {
       <div class="flex items-center justify-between p-3 rounded-2xl bg-obsidian-800/80 border border-white/10 hover:border-sonic-green/30 transition-all cursor-pointer group" data-dl-idx="${idx}">
         <div class="flex items-center gap-3 min-w-0 flex-1">
           <div class="relative w-12 h-12 rounded-xl overflow-hidden flex-shrink-0 bg-obsidian-900 border border-white/10">
-            <img src="${t.cover_url || './logo.png'}" alt="Cover" class="w-full h-full object-cover" onerror="this.src='./logo.png'" />
+            <img src="${escapeHtml(t.cover_url || './logo.png')}" alt="Cover" class="w-full h-full object-cover" onerror="this.src='./logo.png'" />
             <div class="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" class="text-sonic-green"><polygon points="5 3 19 12 5 21 5 3"/></svg>
             </div>
           </div>
           <div class="min-w-0 flex-1">
-            <h4 class="text-xs font-bold text-white truncate">${t.name}</h4>
-            <p class="text-[11px] text-white/60 truncate">${t.artists}</p>
+            <h4 class="text-xs font-bold text-white truncate">${escapeHtml(t.name)}</h4>
+            <p class="text-[11px] text-white/60 truncate">${escapeHtml(t.artists)}</p>
             <div class="flex items-center gap-2 mt-1">
-              <span class="text-[9px] font-mono px-1.5 py-0.2 rounded bg-sonic-green/20 text-sonic-green font-semibold">${t.format || '320 KBPS'}</span>
-              <span class="text-[9px] font-mono text-white/40">${t.size || ''}</span>
+              <span class="text-[9px] font-mono px-1.5 py-0.2 rounded bg-sonic-green/20 text-sonic-green font-semibold">${escapeHtml(t.format || 'Audio')}</span>
+              <span class="text-[9px] font-mono text-white/40">${escapeHtml(t.size || '')}</span>
             </div>
           </div>
         </div>
@@ -449,7 +466,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           <button class="btn-play-dl w-9 h-9 rounded-full bg-sonic-green hover:bg-emerald-400 text-black flex items-center justify-center shadow-md active:scale-90 transition-all" data-dl-idx="${idx}" title="Reproducir ahora">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg>
           </button>
-          <button class="btn-del-dl p-2 text-white/30 hover:text-red-400 rounded-lg active:scale-90 transition-all" data-id="${t.id}" title="Eliminar archivo descargado">
+          <button class="btn-del-dl p-2 text-white/30 hover:text-red-400 rounded-lg active:scale-90 transition-all" data-id="${escapeHtml(t.id)}" title="Quitar descarga de la app">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18m-2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
           </button>
         </div>
@@ -457,7 +474,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     `).join('');
 
     // Click track row or play button
-    downloadedContainer.querySelectorAll('.btn-play-dl, [data-dl-idx]').forEach(el => {
+    downloadedContainer.querySelectorAll(':scope > [data-dl-idx]').forEach(el => {
       el.addEventListener('click', (e) => {
         if ((e.target as HTMLElement).closest('.btn-del-dl')) return;
         const idxStr = el.getAttribute('data-dl-idx');
@@ -472,7 +489,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
         const id = btn.getAttribute('data-id');
-        if (id && confirm('¿Deseas eliminar este archivo descargado?')) {
+        if (id && await appDialog.confirm('¿Quitar esta descarga de la app? Los archivos guardados en Documents se conservan.')) {
           await localLibrary.deleteTrack(id);
           renderDownloadedTracks();
           refreshLibraryView();
@@ -511,11 +528,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       <div class="bg-obsidian-800/80 border border-white/10 rounded-2xl p-3.5 space-y-2">
         <div class="flex items-center justify-between">
           <div class="min-w-0 flex-1 pr-2">
-            <h4 class="text-xs font-bold text-white truncate">${task.track.name}</h4>
-            <p class="text-[11px] text-white/50 truncate">${task.track.artists}</p>
+            <h4 class="text-xs font-bold text-white truncate">${escapeHtml(task.track.name)}</h4>
+            <p class="text-[11px] text-white/50 truncate">${escapeHtml(task.track.artists)}</p>
           </div>
           <span class="text-[10px] font-mono px-2 py-0.5 rounded-full ${task.status === 'completed' ? 'bg-sonic-green/20 text-sonic-green' : task.status === 'error' ? 'bg-red-500/20 text-red-400' : 'bg-white/10 text-white/70'}">
-            ${task.status === 'completed' ? 'Listo ✓' : task.status === 'downloading' ? `${task.percent}%` : task.status === 'error' ? 'Error' : 'En cola'}
+            ${task.status === 'completed' ? 'Listo ✓' : task.status === 'downloading' ? `${task.percent}%` : task.status === 'error' ? 'Error' : task.status === 'cancelled' ? 'Cancelada' : 'En cola'}
           </span>
         </div>
 
@@ -525,9 +542,24 @@ document.addEventListener('DOMContentLoaded', async () => {
           </div>
         ` : ''}
 
-        ${task.error ? `<div class="text-[10px] text-red-400">${task.error}</div>` : ''}
+        ${task.error ? `<div class="text-[10px] text-red-400">${escapeHtml(task.error)}</div>` : ''}
+        ${['queued', 'downloading'].includes(task.status) ? `<button class="download-cancel text-xs text-white/70 px-3 py-2 rounded-xl bg-white/5" data-track-id="${escapeHtml(task.track.id)}">Cancelar</button>` : ''}
+        ${['error', 'cancelled'].includes(task.status) ? `<button class="download-retry text-xs text-sonic-green px-3 py-2 rounded-xl bg-white/5" data-track-id="${escapeHtml(task.track.id)}">Reintentar</button>` : ''}
       </div>
     `).join('');
+    downloadsContainer.querySelectorAll<HTMLButtonElement>('.download-cancel').forEach(button => {
+      button.addEventListener('click', () => downloadEngine.cancel(button.dataset.trackId!));
+    });
+    downloadsContainer.querySelectorAll<HTMLButtonElement>('.download-retry').forEach(button => {
+      button.addEventListener('click', async () => {
+        const task = tasks.find(item => item.track.id === button.dataset.trackId);
+        if (!task) return;
+        button.disabled = true;
+        try { await downloadEngine.addDownload(task.track); }
+        catch (error: any) { await appDialog.alert(error.message || 'No se pudo reintentar la descarga.'); }
+        finally { button.disabled = false; }
+      });
+    });
   });
 
   document.getElementById('btn-clear-downloads')?.addEventListener('click', () => {

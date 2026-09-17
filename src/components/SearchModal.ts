@@ -1,3 +1,5 @@
+import { appDialog } from './AppDialog';
+import { escapeHtml } from '../utils/html';
 import { spotifyClient, SpotifyPlaylistResult } from '../services/spotifyClient';
 import { audioEngine } from '../services/audioEngine';
 import { downloadEngine } from '../services/downloadEngine';
@@ -9,6 +11,7 @@ export class SearchModal {
   private inputElement: HTMLInputElement | null = null;
   private resultsContainer: HTMLElement | null = null;
   private isSearching = false;
+  private searchGeneration = 0;
   private currentSpotifyPlaylist: SpotifyPlaylistResult | null = null;
 
   constructor() {
@@ -76,7 +79,7 @@ export class SearchModal {
       } catch {}
 
       if (!url || !url.includes('spotify.com')) {
-        const input = prompt('Pega el enlace de la playlist, álbum o canción de Spotify:\n(Ej: https://open.spotify.com/playlist/...)');
+        const input = await appDialog.prompt('Pega el enlace de la playlist, álbum o canción de Spotify:\n(Ej: https://open.spotify.com/playlist/...)');
         if (input) url = input.trim();
       }
 
@@ -84,7 +87,7 @@ export class SearchModal {
         if (this.inputElement) this.inputElement.value = url;
         this.loadSpotifyEntity(url);
       } else if (url) {
-        alert('El enlace ingresado no parece ser de Spotify.');
+        await appDialog.alert('El enlace ingresado no parece ser de Spotify.');
       }
     });
 
@@ -116,7 +119,10 @@ export class SearchModal {
 
     document.getElementById('btn-clear-search-input')?.addEventListener('click', () => {
       if (this.inputElement) {
+        this.searchGeneration++;
+        clearTimeout(debounceTimer);
         this.inputElement.value = '';
+        if (this.resultsContainer) this.resultsContainer.textContent = 'Busca una canción o pega un enlace de Spotify.';
         this.inputElement.focus();
         document.getElementById('btn-clear-search-input')?.classList.add('hidden');
       }
@@ -134,7 +140,7 @@ export class SearchModal {
   }
 
   private async loadSpotifyEntity(url: string) {
-    if (this.isSearching) return;
+    const generation = ++this.searchGeneration;
     this.isSearching = true;
 
     if (this.resultsContainer) {
@@ -148,22 +154,24 @@ export class SearchModal {
 
     try {
       const sp = await spotifyClient.fetchSpotifyEntity(url);
+      if (generation !== this.searchGeneration) return;
       this.currentSpotifyPlaylist = sp;
       this.renderSpotifyPlaylist(sp);
     } catch (err: any) {
+      if (generation !== this.searchGeneration) return;
       if (this.resultsContainer) {
         this.resultsContainer.innerHTML = `
           <div class="py-14 text-center space-y-3 px-4">
             <div class="w-10 h-10 mx-auto rounded-full bg-red-500/10 text-red-400 flex items-center justify-center">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
             </div>
-            <p class="text-xs text-red-300">${err.message}</p>
+            <p class="text-xs text-red-300">${escapeHtml(err.message)}</p>
             <p class="text-[11px] text-white/40">Verifica que la playlist sea pública en Spotify</p>
           </div>
         `;
       }
     } finally {
-      this.isSearching = false;
+      if (generation === this.searchGeneration) this.isSearching = false;
     }
   }
 
@@ -175,12 +183,12 @@ export class SearchModal {
       <div class="bg-obsidian-800/90 border border-white/10 rounded-2xl p-4 mb-3 space-y-3 shadow-xl">
         <div class="flex items-center gap-3.5">
           <div class="w-16 h-16 rounded-xl overflow-hidden bg-obsidian-900 border border-white/10 flex-shrink-0 shadow-md">
-            <img src="${sp.cover_url || '/logo.png'}" alt="Cover" class="w-full h-full object-cover" onerror="this.src='/logo.png'" />
+            <img src="${escapeHtml(sp.cover_url || '/logo.png')}" alt="Cover" class="w-full h-full object-cover" onerror="this.src='/logo.png'" />
           </div>
           <div class="min-w-0 flex-1">
             <span class="text-[9px] uppercase tracking-wider font-bold text-sonic-green px-2 py-0.5 rounded bg-sonic-green/10">Spotify ${sp.type.toUpperCase()}</span>
-            <h3 class="text-sm font-bold text-white truncate mt-1">${sp.name}</h3>
-            <p class="text-[11px] text-white/50 truncate">${sp.owner} · ${sp.total_tracks} canciones</p>
+            <h3 class="text-sm font-bold text-white truncate mt-1">${escapeHtml(sp.name)}</h3>
+            <p class="text-[11px] text-white/50 truncate">${escapeHtml(sp.owner)} · ${sp.total_tracks} canciones</p>
           </div>
         </div>
 
@@ -210,16 +218,16 @@ export class SearchModal {
             <div class="flex items-center gap-3 min-w-0 flex-1 cursor-pointer btn-sp-play-track">
               <span class="text-[11px] font-mono text-white/30 w-5 text-center flex-shrink-0">${idx + 1}</span>
               <div class="relative w-10 h-10 rounded-xl overflow-hidden flex-shrink-0 bg-obsidian-800 border border-white/10">
-                <img src="${t.cover_url || ''}" alt="Cover" class="w-full h-full object-cover" onerror="this.style.display='none'" />
+                <img src="${escapeHtml(t.cover_url || '')}" alt="Cover" class="w-full h-full object-cover" onerror="this.style.display='none'" />
               </div>
               <div class="min-w-0 flex-1">
-                <h4 class="text-xs font-semibold text-white truncate">${t.name}</h4>
-                <p class="text-[11px] text-white/50 truncate">${t.artists}</p>
+                <h4 class="text-xs font-semibold text-white truncate">${escapeHtml(t.name)}</h4>
+                <p class="text-[11px] text-white/50 truncate">${escapeHtml(t.artists)}</p>
               </div>
             </div>
 
             <div class="flex items-center gap-1.5 pl-2">
-              <span class="text-[10px] font-mono text-white/40 mr-1">${t.duration_str}</span>
+              <span class="text-[10px] font-mono text-white/40 mr-1">${escapeHtml(t.duration_str)}</span>
               <!-- Direct Play Button -->
               <button class="btn-sp-play-track p-2 rounded-xl bg-sonic-green text-black hover:bg-emerald-400 font-bold flex items-center justify-center active:scale-90 shadow-md shadow-green-500/20 transition-all" title="Reproducir canción">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg>
@@ -248,11 +256,11 @@ export class SearchModal {
         btn.disabled = true;
         btn.innerHTML = '<span class="text-[10px] animate-pulse">Agregando...</span>';
         const count = await downloadEngine.addBatchDownloads(sp.tracks);
-        alert(`¡Se agregaron ${count} canciones a la cola de descargas!`);
+        await appDialog.alert(`¡Se agregaron ${count} canciones a la cola de descargas!`);
         document.getElementById('nav-btn-downloads')?.click();
         this.close();
       } catch (err: any) {
-        alert(err.message || 'Error al iniciar descarga masiva');
+        await appDialog.alert(err.message || 'Error al iniciar descarga masiva');
       } finally {
         const btn = document.getElementById('btn-sp-download-all') as HTMLButtonElement;
         if (btn) btn.disabled = false;
@@ -266,9 +274,9 @@ export class SearchModal {
         for (const t of sp.tracks) {
           await localLibrary.addTrackToPlaylist(created.id, t);
         }
-        alert(`¡Playlist "${sp.name}" guardada en la app con éxito! La encontrarás en la pestaña Playlists.`);
+        await appDialog.alert(`¡Playlist "${sp.name}" guardada en la app con éxito! La encontrarás en la pestaña Playlists.`);
       } catch (err: any) {
-        alert('Error al guardar playlist: ' + (err.message || err));
+        await appDialog.alert('Error al guardar playlist: ' + (err.message || err));
       }
     });
 
@@ -294,7 +302,7 @@ export class SearchModal {
           await downloadEngine.addDownload(sp.tracks[idx]);
           btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="text-sonic-green"><polyline points="20 6 9 17 4 12"/></svg>`;
         } catch (err: any) {
-          alert(err.message || 'Error al iniciar descarga');
+          await appDialog.alert(err.message || 'Error al iniciar descarga');
           btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
         }
       });
@@ -302,7 +310,8 @@ export class SearchModal {
   }
 
   private async performSearch(query: string) {
-    if (!query || this.isSearching) return;
+    if (!query) return;
+    const generation = ++this.searchGeneration;
     this.isSearching = true;
 
     if (this.resultsContainer) {
@@ -316,15 +325,17 @@ export class SearchModal {
 
     try {
       const res = await spotifyClient.search(query);
+      if (generation !== this.searchGeneration) return;
       this.renderResults(res.tracks);
     } catch (e: any) {
+      if (generation !== this.searchGeneration) return;
       if (this.resultsContainer) {
         this.resultsContainer.innerHTML = `
-          <div class="py-12 text-center text-red-400 text-xs">Error al buscar: ${e.message}</div>
+          <div class="py-12 text-center text-red-400 text-xs">Error al buscar: ${escapeHtml(e.message)}</div>
         `;
       }
     } finally {
-      this.isSearching = false;
+      if (generation === this.searchGeneration) this.isSearching = false;
     }
   }
 
@@ -342,11 +353,11 @@ export class SearchModal {
       <div class="flex items-center justify-between p-2.5 rounded-2xl hover:bg-white/5 active:scale-[0.98] transition-all cursor-pointer group" data-idx="${idx}">
         <div class="flex items-center gap-3 min-w-0 flex-1 pointer-events-none">
           <div class="relative w-11 h-11 rounded-xl overflow-hidden flex-shrink-0 bg-obsidian-800 border border-white/10">
-            <img src="${t.cover_url || '/logo.png'}" alt="Cover" class="w-full h-full object-cover" onerror="this.src='/logo.png'" />
+            <img src="${escapeHtml(t.cover_url || '/logo.png')}" alt="Cover" class="w-full h-full object-cover" onerror="this.src='/logo.png'" />
           </div>
           <div class="min-w-0 flex-1">
-            <h4 class="text-xs font-semibold text-white truncate">${t.name}</h4>
-            <p class="text-[11px] text-white/50 truncate">${t.artists}</p>
+            <h4 class="text-xs font-semibold text-white truncate">${escapeHtml(t.name)}</h4>
+            <p class="text-[11px] text-white/50 truncate">${escapeHtml(t.artists)}</p>
           </div>
         </div>
 
@@ -389,7 +400,7 @@ export class SearchModal {
           await downloadEngine.addDownload(tracks[idx]);
           btn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="text-sonic-green"><polyline points="20 6 9 17 4 12"/></svg>`;
         } catch (err: any) {
-          alert(err.message || 'Error al iniciar descarga');
+          await appDialog.alert(err.message || 'Error al iniciar descarga');
           btn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
         }
       });

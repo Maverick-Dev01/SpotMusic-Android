@@ -1,6 +1,6 @@
 {
   "name": "spotmusic-android",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "type": "module",
   "private": true,
   "description": "SpotMusic Mobile - Reproductor de Música Avanzado y Descargador para Android",
@@ -11,7 +11,8 @@
     "cap:add": "cap add android",
     "cap:sync": "cap sync android",
     "cap:open": "cap open android",
-    "cap:build": "npm run build && cap sync android"
+    "cap:build": "npm run build && cap sync android",
+    "test": "node --test tests/*.test.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^6.2.0",

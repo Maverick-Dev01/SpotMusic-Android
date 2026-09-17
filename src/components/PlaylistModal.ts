@@ -1,3 +1,5 @@
+import { appDialog } from './AppDialog';
+import { escapeHtml } from '../utils/html';
 import { localLibrary } from '../services/localLibrary';
 import { audioEngine } from '../services/audioEngine';
 import { spotifyClient } from '../services/spotifyClient';
@@ -70,7 +72,7 @@ export class PlaylistModal {
     document.getElementById('btn-back-to-pl-list')?.addEventListener('click', () => this.showList());
 
     document.getElementById('btn-import-spotify-pl')?.addEventListener('click', async () => {
-      const url = prompt('Pega el enlace de la playlist o álbum de Spotify:\n(Ejemplo: https://open.spotify.com/playlist/...)');
+      const url = await appDialog.prompt('Pega el enlace de la playlist o álbum de Spotify:\n(Ejemplo: https://open.spotify.com/playlist/...)');
       if (!url || !url.trim()) return;
 
       const btn = document.getElementById('btn-import-spotify-pl');
@@ -83,17 +85,17 @@ export class PlaylistModal {
         for (const t of sp.tracks) {
           await localLibrary.addTrackToPlaylist(created.id, t);
         }
-        alert(`¡Playlist "${sp.name}" transferida con éxito a tu app (${sp.tracks.length} canciones)!`);
+        await appDialog.alert(`¡Playlist "${sp.name}" transferida con éxito a tu app (${sp.tracks.length} canciones)!`);
         await this.renderList();
       } catch (err: any) {
-        alert('Error al importar de Spotify: ' + (err.message || err));
+        await appDialog.alert('Error al importar de Spotify: ' + (err.message || err));
       } finally {
         if (btn) btn.innerHTML = originalHtml;
       }
     });
 
     document.getElementById('btn-create-new-pl')?.addEventListener('click', async () => {
-      const name = prompt('Nombre de la nueva playlist:');
+      const name = await appDialog.prompt('Nombre de la nueva playlist:');
       if (name && name.trim()) {
         await localLibrary.createPlaylist(name.trim());
         this.renderList();
@@ -110,7 +112,7 @@ export class PlaylistModal {
 
     document.getElementById('btn-delete-current-pl')?.addEventListener('click', async () => {
       if (!this.currentPlaylist) return;
-      if (confirm(`¿Eliminar la playlist "${this.currentPlaylist.name}"?`)) {
+      if (await appDialog.confirm(`¿Eliminar la playlist "${this.currentPlaylist.name}"?`)) {
         await localLibrary.deletePlaylist(this.currentPlaylist.id);
         this.showList();
         this.renderList();
@@ -138,10 +140,10 @@ export class PlaylistModal {
       <div class="btn-open-pl-card flex items-center justify-between p-3 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/5 cursor-pointer transition-all active:scale-[0.99]" data-idx="${idx}">
         <div class="flex items-center gap-3 min-w-0">
           <div class="w-12 h-12 rounded-xl overflow-hidden bg-obsidian-800 border border-white/10 flex items-center justify-center flex-shrink-0">
-            ${pl.cover_url ? `<img src="${pl.cover_url}" class="w-full h-full object-cover" />` : `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-sonic-green"><path d="m9 18 6-6-6-6"/></svg>`}
+            ${pl.cover_url ? `<img src="${escapeHtml(pl.cover_url)}" class="w-full h-full object-cover" />` : `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-sonic-green"><path d="m9 18 6-6-6-6"/></svg>`}
           </div>
           <div class="min-w-0">
-            <h4 class="text-xs font-bold text-white truncate">${pl.name}</h4>
+            <h4 class="text-xs font-bold text-white truncate">${escapeHtml(pl.name)}</h4>
             <p class="text-[11px] text-white/50">${pl.trackCount || pl.tracks.length} canciones</p>
           </div>
         </div>
@@ -185,14 +187,14 @@ export class PlaylistModal {
       <div class="flex items-center justify-between p-2.5 rounded-xl bg-white/5 hover:bg-white/10 transition-all">
         <div class="btn-play-single-pl-track flex items-center gap-3 min-w-0 flex-1 cursor-pointer" data-idx="${idx}">
           <div class="w-10 h-10 rounded-lg overflow-hidden bg-obsidian-800 flex-shrink-0">
-            <img src="${t.cover_url || ''}" class="w-full h-full object-cover" onerror="this.style.display='none'" />
+            <img src="${escapeHtml(t.cover_url || '')}" class="w-full h-full object-cover" onerror="this.style.display='none'" />
           </div>
           <div class="min-w-0 flex-1">
-            <h5 class="text-xs font-semibold text-white truncate">${t.name}</h5>
-            <p class="text-[11px] text-white/50 truncate">${t.artists}</p>
+            <h5 class="text-xs font-semibold text-white truncate">${escapeHtml(t.name)}</h5>
+            <p class="text-[11px] text-white/50 truncate">${escapeHtml(t.artists)}</p>
           </div>
         </div>
-        <button class="btn-remove-from-pl p-2 text-white/30 hover:text-red-400" data-id="${t.id}" title="Quitar de playlist">
+        <button class="btn-remove-from-pl p-2 text-white/30 hover:text-red-400" data-id="${escapeHtml(t.id)}" title="Quitar de playlist">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>

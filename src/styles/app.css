@@ -194,3 +194,80 @@ body.theme-light input[type=range]::-webkit-slider-runnable-track {
 .spin-slow {
   animation: spin 18s linear infinite;
 }
+
+/* Shared mobile surfaces: preserve readable foregrounds in both themes. */
+body { height: 100dvh; }
+button:focus-visible, a:focus-visible, textarea:focus-visible, select:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 3px;
+}
+button:disabled { opacity: .55; cursor: wait; }
+[id$="modal-overlay"] > div { max-height: 90dvh; overflow-y: auto; }
+body.theme-light .text-white\/90 { color: #1e293b !important; }
+body.theme-light .text-white\/40,
+body.theme-light .text-white\/30 { color: #64748b !important; }
+body.theme-light .text-sonic-green,
+body.theme-light .text-sonic-emerald { color: var(--accent-ink, #087443) !important; }
+body.theme-light .text-yellow-400 { color: #854d0e !important; }
+body.theme-light .text-red-400 { color: #b91c1c !important; }
+body.theme-light .bg-obsidian-900\/95,
+body.theme-light .bg-obsidian-900\/90 { background-color: #f8fafc !important; }
+body.theme-light [class*="placeholder:text-white"]::placeholder { color: #64748b !important; }
+body.theme-light .bg-black\/20,
+body.theme-light .bg-black\/30 { background-color: #e2e8f0 !important; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
+
+/* Closed overlays must also leave keyboard and accessibility navigation. */
+[id$="modal-overlay"].opacity-0.pointer-events-none { visibility: hidden; }
+
+:root { --surface: #10141c; --foreground: #f1f5f9; --muted: #a6b0bf; --line: #ffffff20; }
+body.theme-light { --surface: #ffffff; --foreground: #172033; --muted: #526176; --line: #17203322; }
+.app-dialog { padding: 0; border: 1px solid var(--line); border-radius: 24px; width: min(380px, calc(100vw - 32px)); max-height: 85dvh; background: var(--surface); color: var(--foreground); box-shadow: 0 24px 80px #0005; }
+.app-dialog::backdrop { background: #050b16aa; backdrop-filter: blur(8px); }
+.app-dialog-card { padding: 24px; display: grid; gap: 16px; }
+.app-dialog-mark { color: var(--accent-color); font-size: 28px; }
+.app-dialog h2 { font-size: 18px; font-weight: 700; margin: 0; }
+.app-dialog p { color: var(--muted); font-size: 14px; line-height: 1.6; white-space: pre-line; overflow-wrap: anywhere; margin: 0; }
+.app-dialog-input { width: 100%; border: 1px solid var(--line); border-radius: 12px; background: transparent; padding: 12px; font-size: 14px; color: var(--foreground); user-select: text; }
+.app-dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px; }
+.app-dialog-actions button { min-height: 44px; padding: 10px 18px; border-radius: 12px; font-size: 13px; font-weight: 700; }
+.dialog-primary { background: var(--accent-color); color: #07120c; }
+.dialog-secondary { border: 1px solid var(--line); color: var(--foreground); }
+body.theme-light .bg-obsidian-900\/60 { background: #edf1f6 !important; }
+
+#queue-drawer-overlay.opacity-0.pointer-events-none { visibility: hidden; }
+
+.bg-sonic-green\/5 { background-color: rgba(var(--accent-color-rgb), 0.05) !important; }
+.border-sonic-green\/5 { border-color: rgba(var(--accent-color-rgb), 0.05) !important; }
+
+.bg-sonic-green\/10 { background-color: rgba(var(--accent-color-rgb), 0.1) !important; }
+.border-sonic-green\/10 { border-color: rgba(var(--accent-color-rgb), 0.1) !important; }
+
+.bg-sonic-green\/15 { background-color: rgba(var(--accent-color-rgb), 0.15) !important; }
+.border-sonic-green\/15 { border-color: rgba(var(--accent-color-rgb), 0.15) !important; }
+
+.bg-sonic-green\/20 { background-color: rgba(var(--accent-color-rgb), 0.2) !important; }
+.border-sonic-green\/20 { border-color: rgba(var(--accent-color-rgb), 0.2) !important; }
+
+.bg-sonic-green\/30 { background-color: rgba(var(--accent-color-rgb), 0.3) !important; }
+.border-sonic-green\/30 { border-color: rgba(var(--accent-color-rgb), 0.3) !important; }
+
+.bg-sonic-green\/40 { background-color: rgba(var(--accent-color-rgb), 0.4) !important; }
+.border-sonic-green\/40 { border-color: rgba(var(--accent-color-rgb), 0.4) !important; }
+
+.bg-sonic-green\/50 { background-color: rgba(var(--accent-color-rgb), 0.5) !important; }
+.border-sonic-green\/50 { border-color: rgba(var(--accent-color-rgb), 0.5) !important; }
+
+.bg-sonic-green\/60 { background-color: rgba(var(--accent-color-rgb), 0.6) !important; }
+.border-sonic-green\/60 { border-color: rgba(var(--accent-color-rgb), 0.6) !important; }
+
+.bg-sonic-green\/80 { background-color: rgba(var(--accent-color-rgb), 0.8) !important; }
+.border-sonic-green\/80 { border-color: rgba(var(--accent-color-rgb), 0.8) !important; }
+
+.bg-sonic-green\/90 { background-color: rgba(var(--accent-color-rgb), 0.9) !important; }
+.border-sonic-green\/90 { border-color: rgba(var(--accent-color-rgb), 0.9) !important; }
+
+.bg-sonic-green\/95 { background-color: rgba(var(--accent-color-rgb), 0.95) !important; }
+.border-sonic-green\/95 { border-color: rgba(var(--accent-color-rgb), 0.95) !important; }

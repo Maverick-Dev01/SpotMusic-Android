@@ -1,5 +1,7 @@
-import { licenseClient } from '../services/licenseClient';
+import { appDialog } from './AppDialog';
+import { licenseClient, licenseDetails } from '../services/licenseClient';
 import { updaterClient, UpdateInfo } from '../services/updaterClient';
+import { streamResolver } from '../services/streamResolver';
 import { downloadEngine } from '../services/downloadEngine';
 
 export class SettingsModal {
@@ -81,7 +83,7 @@ export class SettingsModal {
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                 <span>Actualizaciones del Sistema</span>
               </span>
-              <span class="font-mono text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-white/70">v1.0.6</span>
+              <span class="font-mono text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-white/70">v${updaterClient.currentVersion}</span>
             </div>
 
             <p id="settings-update-msg" class="text-[11px] text-white/60">Comprueba si hay nuevas versiones publicadas en GitHub.</p>
@@ -145,9 +147,7 @@ export class SettingsModal {
             <div class="space-y-1.5">
               <label class="text-[10px] text-white/50 uppercase tracking-wider font-semibold">Calidad de Streaming & Descarga:</label>
               <select id="settings-select-quality" class="w-full bg-obsidian-800 border border-white/10 rounded-xl px-3 py-2 text-sonic-green font-bold focus:outline-none">
-                <option value="320k">320 KBPS (Hi-Fi Ultra Estudio)</option>
-                <option value="192k">192 KBPS (Calidad Equilibrada)</option>
-                <option value="128k">128 KBPS (Ahorro de datos)</option>
+                <option value="source">Calidad original de la fuente</option>
               </select>
             </div>
 
@@ -196,7 +196,7 @@ export class SettingsModal {
       const btn = document.getElementById('btn-settings-activate') as HTMLButtonElement;
       const token = input?.value.trim() || '';
 
-      if (!token) return alert('Por favor introduce tu clave de licencia KeyForge.');
+      if (!token) return await appDialog.alert('Por favor introduce tu clave de licencia KeyForge.');
 
       btn.disabled = true;
       btn.innerHTML = '<span class="w-3.5 h-3.5 rounded-full border-2 border-black border-t-transparent animate-spin"></span>';
@@ -204,13 +204,13 @@ export class SettingsModal {
       try {
         const res = await licenseClient.activateToken(token);
         if (res.valid) {
-          alert(`¡Licencia activada con éxito para ${res.clientName || 'tu dispositivo'}!`);
+          await appDialog.alert(`¡Licencia activada con éxito para ${res.clientName || 'tu dispositivo'}!`);
           this.refreshLicenseUI();
         } else {
-          alert(res.error || 'No se pudo activar la licencia');
+          await appDialog.alert(res.error || 'No se pudo activar la licencia');
         }
       } catch (e: any) {
-        alert(e.message || 'Error al conectar con KeyForge');
+        await appDialog.alert(e.message || 'Error al conectar con KeyForge');
       } finally {
         btn.disabled = false;
         btn.innerHTML = '<span>Activar Licencia</span>';
@@ -218,8 +218,8 @@ export class SettingsModal {
     });
 
     // Revoke License
-    document.getElementById('btn-settings-revoke')?.addEventListener('click', () => {
-      if (confirm('¿Deseas desvincular la licencia de este dispositivo?')) {
+    document.getElementById('btn-settings-revoke')?.addEventListener('click', async () => {
+      if (await appDialog.confirm('¿Quitar la licencia guardada en esta app? Esto no libera el dispositivo en KeyForge.')) {
         licenseClient.removeLicense();
         const input = document.getElementById('settings-input-token') as HTMLTextAreaElement;
         if (input) input.value = '';
@@ -264,18 +264,14 @@ export class SettingsModal {
           if (actionBtn) {
             actionBtn.disabled = false;
             actionBtn.innerHTML = '<span>Instalar Ahora</span>';
-            actionBtn.onclick = async () => {
-              await updaterClient.installApk(lastDownloadedApkPath);
-            };
+
           }
         } else {
           if (statusMsg) statusMsg.textContent = '¡Descarga completada! Abriendo instalador de Android...';
           if (actionBtn) {
             actionBtn.disabled = false;
             actionBtn.innerHTML = '<span>Instalar Ahora</span>';
-            actionBtn.onclick = async () => {
-              await updaterClient.installApk(lastDownloadedApkPath);
-            };
+
           }
         }
       } catch (err: any) {
@@ -293,16 +289,19 @@ export class SettingsModal {
     // Quality Selector
     const selectQ = document.getElementById('settings-select-quality') as HTMLSelectElement;
     if (selectQ) {
-      selectQ.value = downloadEngine.quality;
+      selectQ.value = 'source';
+      selectQ.disabled = true;
+      selectQ.title = 'La app no convierte el bitrate del archivo de origen';
       selectQ.addEventListener('change', () => {
         downloadEngine.setQuality(selectQ.value);
       });
     }
 
     // Clear Cache
-    document.getElementById('btn-settings-clear-cache')?.addEventListener('click', () => {
-      if (confirm('¿Deseas vaciar la caché temporal de audio?')) {
-        alert('Caché temporal liberada.');
+    document.getElementById('btn-settings-clear-cache')?.addEventListener('click', async () => {
+      if (await appDialog.confirm('¿Deseas vaciar la caché temporal de audio?')) {
+        streamResolver.clearCache();
+        await appDialog.alert('Caché de enlaces de audio liberada. Tu música descargada se conserva.');
       }
     });
 
@@ -338,6 +337,7 @@ export class SettingsModal {
 
   private applyThemeMode(mode: string) {
     localStorage.setItem('spotmusic_theme_mode', mode);
+    document.documentElement.style.colorScheme = mode === 'light' ? 'light' : 'dark';
     if (mode === 'light') {
       document.body.classList.add('theme-light');
       document.documentElement.classList.remove('dark');
@@ -356,8 +356,11 @@ export class SettingsModal {
   }
 
   private applyAccentColor(color: string) {
+    if (!/^#[0-9a-f]{6}$/i.test(color)) color = '#1ED760';
     localStorage.setItem('spotmusic_accent_color', color);
     document.documentElement.style.setProperty('--accent-color', color);
+    const ink: Record<string, string> = { '#1ED760': '#087443', '#06B6D4': '#0e677d', '#A855F7': '#7834b0', '#F43F5E': '#b22040', '#F59E0B': '#8a5005' };
+    document.documentElement.style.setProperty('--accent-ink', ink[color.toUpperCase()] || '#087443');
 
     try {
       const hex = color.replace('#', '');
@@ -369,6 +372,7 @@ export class SettingsModal {
 
     const accentButtons = this.overlay.querySelectorAll('.btn-accent-color');
     accentButtons.forEach(b => {
+      (b as HTMLElement).style.backgroundColor = b.getAttribute('data-color') || '#1ED760';
       const isSelected = b.getAttribute('data-color') === color;
       if (isSelected) {
         b.className = 'btn-accent-color w-7 h-7 rounded-full border-2 border-white scale-110 shadow-lg';
@@ -388,6 +392,14 @@ export class SettingsModal {
     const revokeBtn = document.getElementById('btn-settings-revoke');
 
     if (devIdSpan) devIdSpan.textContent = devId;
+    let details = document.getElementById('settings-license-client-details');
+    if (!details && clientName) {
+      details = document.createElement('p');
+      details.id = 'settings-license-client-details';
+      details.className = 'text-xs text-white/70 leading-relaxed';
+      clientName.parentElement?.after(details);
+    }
+    if (details) details.textContent = licenseDetails(info);
     if (clientName) clientName.textContent = info.clientName || 'Sin Registrar';
 
     if (revokeBtn) {
@@ -403,12 +415,13 @@ export class SettingsModal {
         badge.textContent = 'Revocada ✗';
       } else {
         badge.className = 'px-2.5 py-0.5 rounded-full font-bold text-[10px] bg-yellow-500/20 text-yellow-400 border border-yellow-500/30';
-        badge.textContent = 'Sin Licencia';
+        badge.textContent = info.status === 'expired' ? 'Vencida' : 'Sin Licencia';
       }
     }
   }
 
   public async checkForUpdates() {
+    if (this.isUpdating) return;
     const statusMsg = document.getElementById('settings-update-msg');
     const dlBtn = document.getElementById('btn-settings-download-apk');
     if (statusMsg) statusMsg.textContent = 'Consultando GitHub Releases...';

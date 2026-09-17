@@ -1,3 +1,4 @@
+import { appDialog } from './AppDialog';
 import { updaterClient, UpdateInfo } from '../services/updaterClient';
 
 export class UpdatesModal {
@@ -20,7 +21,7 @@ export class UpdatesModal {
             </div>
             <div>
               <h3 class="text-sm font-bold text-white">Actualizaciones</h3>
-              <p class="text-[11px] text-white/50" id="updates-current-ver">SpotMusic v1.0.4</p>
+              <p class="text-[11px] text-white/50" id="updates-current-ver">SpotMusic v${updaterClient.currentVersion}</p>
             </div>
           </div>
           <button id="btn-close-updates" class="p-2 text-white/40 hover:text-white rounded-full hover:bg-white/5">
@@ -83,13 +84,14 @@ export class UpdatesModal {
       if (statusMsg) statusMsg.textContent = 'Descargando paquete de actualización...';
 
       try {
-        await updaterClient.downloadAndInstall(this.currentInfo.apkUrl, (pct) => {
+        const result = await updaterClient.downloadAndInstall(this.currentInfo.apkUrl, (pct) => {
           if (progBar) progBar.style.width = `${pct}%`;
           if (progPct) progPct.textContent = `${pct}%`;
         });
-        if (statusMsg) statusMsg.textContent = 'Abriendo instalador del sistema Android...';
+        if (statusMsg) statusMsg.textContent = result.needsPermission ? 'Permite instalar apps en Ajustes y vuelve a pulsar Instalar.' : 'Instalador solicitado. Confirma la instalación en Android.';
+        actionBtn.textContent = 'Instalar';
       } catch (err: any) {
-        alert('Error en la actualización: ' + (err.message || err));
+        await appDialog.alert('Error en la actualización: ' + (err.message || err));
         if (statusMsg) statusMsg.textContent = 'Fallo en la descarga. Puedes intentar nuevamente.';
       } finally {
         this.isUpdating = false;
@@ -99,6 +101,7 @@ export class UpdatesModal {
   }
 
   public async check() {
+    if (this.isUpdating) return;
     const statusBadge = document.getElementById('updates-status-badge');
     const statusMsg = document.getElementById('updates-status-msg');
     const actionBtn = document.getElementById('btn-install-update-action');
@@ -114,6 +117,8 @@ export class UpdatesModal {
     try {
       const info = await updaterClient.checkForUpdates();
       this.currentInfo = info;
+      const versionLabel = document.getElementById('updates-current-ver');
+      if (versionLabel) versionLabel.textContent = `SpotMusic v${info.currentVersion}`;
 
       if (info.hasUpdate) {
         if (statusBadge) {
@@ -132,7 +137,8 @@ export class UpdatesModal {
         if (badgeTop) badgeTop.classList.add('hidden');
       }
     } catch (e: any) {
-      if (statusMsg) statusMsg.textContent = 'No se pudo comprobar actualizaciones en este momento.';
+      if (statusBadge) statusBadge.textContent = 'Sin comprobar';
+      if (statusMsg) statusMsg.textContent = e.message || 'No se pudo comprobar actualizaciones.';
     }
   }
 
