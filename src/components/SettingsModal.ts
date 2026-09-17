@@ -252,8 +252,9 @@ export class SettingsModal {
         });
         if (statusMsg) statusMsg.textContent = 'Abriendo instalador del sistema Android...';
       } catch (err: any) {
-        alert('Error en la actualización: ' + (err.message || err));
-        if (statusMsg) statusMsg.textContent = 'Fallo en la descarga. Puedes intentar nuevamente.';
+        console.warn('In-app updater notice, fallback to browser:', err);
+        window.open(this.currentUpdateInfo.apkUrl, '_system');
+        if (statusMsg) statusMsg.textContent = 'Descargando mediante el navegador del sistema...';
       } finally {
         this.isUpdating = false;
         if (actionBtn) actionBtn.disabled = false;

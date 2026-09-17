@@ -81,43 +81,31 @@ class UpdaterClient {
   public async downloadAndInstall(apkUrl: string, onProgress?: (pct: number) => void): Promise<void> {
     if (!apkUrl) throw new Error('URL de APK no disponible');
 
-    onProgress?.(10);
-    const res = await fetch(apkUrl);
-    if (!res.ok) throw new Error(`HTTP ${res.status} al descargar actualización`);
+    try {
+      onProgress?.(25);
+      // 1. Native background download using Capacitor Filesystem (No CORS, follows redirects)
+      const dlRes = await Filesystem.downloadFile({
+        url: apkUrl,
+        path: 'SpotMusic_Update.apk',
+        directory: Directory.Cache,
+        recursive: true
+      });
 
-    onProgress?.(35);
-    const blob = await res.blob();
-    onProgress?.(65);
+      onProgress?.(80);
 
-    const reader = new FileReader();
-    const base64Data = await new Promise<string>((resolve, reject) => {
-      reader.onloadend = () => {
-        const result = reader.result as string;
-        const b64 = result.split(',')[1] || result;
-        resolve(b64);
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-
-    onProgress?.(85);
-    const fileName = 'SpotMusic_Update.apk';
-    const writeRes = await Filesystem.writeFile({
-      path: fileName,
-      data: base64Data,
-      directory: Directory.Cache,
-      recursive: true
-    });
-
-    onProgress?.(100);
-
-    // Call native AppUpdater plugin
-    const AppUpdater = (Capacitor.Plugins as any).AppUpdater;
-    if (AppUpdater && AppUpdater.installApk) {
-      await AppUpdater.installApk({ path: writeRes.uri });
-    } else {
-      window.open(apkUrl, '_system');
+      const AppUpdater = (Capacitor.Plugins as any).AppUpdater;
+      if (AppUpdater && AppUpdater.installApk && dlRes.path) {
+        onProgress?.(100);
+        await AppUpdater.installApk({ path: dlRes.path });
+        return;
+      }
+    } catch (e) {
+      console.warn('Native download failed, opening browser:', e);
     }
+
+    // 2. Guaranteed fallback: Open in native Android browser/system download manager
+    onProgress?.(100);
+    window.open(apkUrl, '_system');
   }
 }
 
