@@ -71,9 +71,10 @@ class FakeAudio {
 }
 function audio(resolver) {
   return load('src/services/audioEngine.ts', {
-    '@capacitor/core': { Capacitor: { convertFileSrc: value => value } },
+    '@capacitor/core': { Capacitor: { convertFileSrc: value => value, isNativePlatform: () => false } },
     './localLibrary': { localLibrary: {} },
-    './streamResolver': { streamResolver: { resolveFullAudio: resolver, clearCache() {} } }
+    './streamResolver': { streamResolver: { resolveFullAudio: resolver, clearCache() {} } },
+    './backgroundAudio': { BackgroundAudio: { addListener: () => ({ remove: () => {} }), requestNotificationPermission: async () => ({ granted: true }) } }
   }, { Audio: FakeAudio, navigator: {}, location: { href: 'https://localhost', origin: 'https://localhost' }, window: {} }).audioEngine;
 }
 test('rapid track changes ignore an older asynchronous resolution', async () => {

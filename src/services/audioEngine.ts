@@ -2,6 +2,7 @@ import { Capacitor } from '@capacitor/core';
 import { Track, RepeatMode, EqualizerPreset } from '../types';
 import { localLibrary } from './localLibrary';
 import { streamResolver } from './streamResolver';
+import { BackgroundAudio } from './backgroundAudio';
 
 export const EQ_PRESETS: Record<string, EqualizerPreset> = {
   'Flat': { name: 'Plano (Flat)', gains: [0, 0, 0, 0, 0], bassBoost: 0 },
@@ -31,6 +32,12 @@ class AudioEngine {
   private compressor: DynamicsCompressorNode | null = null;
   private analyser: AnalyserNode | null = null;
 
+  // Native background audio state
+  private isNative: boolean = typeof Capacitor !== 'undefined' && typeof Capacitor.isNativePlatform === 'function' && Capacitor.isNativePlatform();
+  private nativeIsPlaying: boolean = false;
+  private nativeCurrentTime: number = 0;
+  private nativeDuration: number = 0;
+
   // Queue state
   public queue: Track[] = [];
   public currentIndex: number = -1;
@@ -57,6 +64,10 @@ class AudioEngine {
     this.audio.volume = 1.0;
     this.restoreEqualizer();
     this.setupAudioListeners();
+    if (this.isNative) {
+      this.setupNativeListeners();
+      BackgroundAudio.requestNotificationPermission().catch(() => {});
+    }
   }
 
   public get equalizerAvailable(): boolean { return this.eqFilters.length === 5; }
@@ -179,6 +190,57 @@ class AudioEngine {
     });
   }
 
+  private setupNativeListeners() {
+    BackgroundAudio.addListener('onPlay', () => {
+      this.nativeIsPlaying = true;
+      this.emit('play', this.currentTrack);
+    });
+
+    BackgroundAudio.addListener('onPause', () => {
+      this.nativeIsPlaying = false;
+      this.emit('pause', this.currentTrack);
+    });
+
+    BackgroundAudio.addListener('onNext', () => {
+      this.next(true);
+    });
+
+    BackgroundAudio.addListener('onPrevious', () => {
+      this.prev();
+    });
+
+    BackgroundAudio.addListener('onTimeUpdate', (data) => {
+      this.nativeCurrentTime = data.currentTime;
+      if (data.duration > 0) this.nativeDuration = data.duration;
+      const dur = this.nativeDuration || (this.currentTrack?.duration_ms ? this.currentTrack.duration_ms / 1000 : 0);
+      this.emit('timeupdate', {
+        currentTime: data.currentTime,
+        duration: dur,
+        percent: dur ? (data.currentTime / dur) * 100 : 0
+      });
+    });
+
+    BackgroundAudio.addListener('onEnded', () => {
+      if (this.sleepOnTrackEnd) {
+        this.sleepOnTrackEnd = false;
+        this.cancelSleepTimer();
+        this.pause();
+        this.emit('sleeptimerend');
+        return;
+      }
+
+      if (this.repeatMode === 'one') {
+        if (this.currentTrack) this.playIndex(this.currentIndex);
+      } else {
+        this.next(false);
+      }
+    });
+
+    BackgroundAudio.addListener('onError', (err) => {
+      this.emit('error', new Error(err.message || 'Error en reproducción de audio.'));
+    });
+  }
+
   public get currentTrack(): Track | null {
     if (this.currentIndex >= 0 && this.currentIndex < this.queue.length) {
       return this.queue[this.currentIndex];
@@ -187,14 +249,19 @@ class AudioEngine {
   }
 
   public get isPlaying(): boolean {
+    if (this.isNative) return this.nativeIsPlaying;
     return !this.audio.paused && !this.audio.ended && this.audio.currentTime > 0;
   }
 
   public get duration(): number {
+    if (this.isNative) {
+      return this.nativeDuration || (this.currentTrack?.duration_ms ? this.currentTrack.duration_ms / 1000 : 0);
+    }
     return this.audio.duration || 0;
   }
 
   public get currentTime(): number {
+    if (this.isNative) return this.nativeCurrentTime;
     return this.audio.currentTime || 0;
   }
 
@@ -274,6 +341,41 @@ class AudioEngine {
       return;
     }
 
+    const nativeSource = track.localPath || audioUrl;
+
+    if (this.isNative) {
+      this.audio.pause();
+      this.audio.removeAttribute('src');
+      if (this.objectUrl) {
+        URL.revokeObjectURL(this.objectUrl);
+        this.objectUrl = undefined;
+      }
+      try {
+        await BackgroundAudio.play({
+          url: nativeSource,
+          title: track.name,
+          artist: track.artists,
+          album: track.album || 'SpotMusic Mobile',
+          coverUrl: track.cover_url || '',
+          durationMs: track.duration_ms || 0,
+          positionMs: 0
+        });
+        if (request !== this.playRequest) return;
+        this.nativeIsPlaying = true;
+        this.nativeCurrentTime = 0;
+        this.nativeDuration = track.duration_ms ? track.duration_ms / 1000 : 0;
+        this.emit('trackchange', track);
+        this.emit('queuechange', { queue: this.queue, currentIndex: this.currentIndex });
+        this.emit('play', track);
+        return;
+      } catch (err: any) {
+        if (request !== this.playRequest) return;
+        console.warn('Native playback error:', err);
+        this.emit('error', err instanceof Error ? err : new Error(String(err)));
+        return;
+      }
+    }
+
     // Convert native file:// URIs into WebView-safe Capacitor streaming URLs if needed
     if (audioUrl.startsWith('file://') || (track.isLocal && !audioUrl.startsWith('http') && !audioUrl.startsWith('blob:'))) {
       audioUrl = Capacitor.convertFileSrc(audioUrl);
@@ -324,6 +426,15 @@ class AudioEngine {
       this.playIndex(0);
       return true;
     }
+    if (this.isNative) {
+      if (this.nativeIsPlaying) {
+        this.pause();
+        return false;
+      } else {
+        this.resume();
+        return true;
+      }
+    }
     if (this.audio.paused) {
       if (this.audioCtx && this.audioCtx.state === 'suspended') {
         this.audioCtx.resume();
@@ -338,10 +449,22 @@ class AudioEngine {
 
   public pause() {
     this.playRequest++;
+    if (this.isNative) {
+      this.nativeIsPlaying = false;
+      BackgroundAudio.pause().catch(e => console.warn(e));
+      this.emit('pause', this.currentTrack);
+      return;
+    }
     this.audio.pause();
   }
 
   public resume() {
+    if (this.isNative) {
+      this.nativeIsPlaying = true;
+      BackgroundAudio.resume().catch(e => console.warn(e));
+      this.emit('play', this.currentTrack);
+      return;
+    }
     if (this.audioCtx && this.audioCtx.state === 'suspended') {
       this.audioCtx.resume();
     }
@@ -349,6 +472,11 @@ class AudioEngine {
   }
 
   public seek(seconds: number) {
+    if (this.isNative) {
+      this.nativeCurrentTime = Math.max(0, Math.min(seconds, this.duration || seconds));
+      BackgroundAudio.seek({ positionMs: Math.round(this.nativeCurrentTime * 1000) }).catch(e => console.warn(e));
+      return;
+    }
     if (this.audio.duration) {
       this.audio.currentTime = Math.max(0, Math.min(seconds, this.audio.duration));
     }
@@ -464,8 +592,15 @@ class AudioEngine {
     this.objectUrl = undefined;
     this.queue = [];
     this.currentIndex = -1;
-    this.audio.src = '';
-    this.pause();
+    if (this.isNative) {
+      BackgroundAudio.stop().catch(e => console.warn(e));
+      this.nativeIsPlaying = false;
+      this.nativeCurrentTime = 0;
+      this.nativeDuration = 0;
+    } else {
+      this.audio.src = '';
+      this.pause();
+    }
     this.emit('queuechange', { queue: [], currentIndex: -1 });
   }
 

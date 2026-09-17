@@ -25,6 +25,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(AppUpdaterPlugin.class);
         registerPlugin(StoragePickerPlugin.class);
         registerPlugin(NativeAudioResolverPlugin.class);
+        registerPlugin(BackgroundAudioPlugin.class);
         super.onCreate(savedInstanceState);
         try {
             if (getBridge() != null && getBridge().getWebView() != null) {
