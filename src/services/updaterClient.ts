@@ -11,7 +11,7 @@ export interface UpdateInfo {
 }
 
 class UpdaterClient {
-  public currentVersion = '1.0.5';
+  public currentVersion = '1.0.6';
   private repoOwner = 'Maverick-Dev01';
   private repoName = 'SpotMusic-Android';
 

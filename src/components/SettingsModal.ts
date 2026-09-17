@@ -81,7 +81,7 @@ export class SettingsModal {
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                 <span>Actualizaciones del Sistema</span>
               </span>
-              <span class="font-mono text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-white/70">v1.0.5</span>
+              <span class="font-mono text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-white/70">v1.0.6</span>
             </div>
 
             <p id="settings-update-msg" class="text-[11px] text-white/60">Comprueba si hay nuevas versiones publicadas en GitHub.</p>
@@ -320,7 +320,7 @@ export class SettingsModal {
     modeButtons.forEach(b => {
       const isCurrent = b.getAttribute('data-mode') === mode;
       b.className = `btn-theme-mode py-2 px-3 rounded-xl border flex items-center justify-center gap-1.5 transition-all font-semibold ${
-        isCurrent ? 'border-sonic-green bg-sonic-green/15 text-white' : 'border-white/10 bg-white/5 text-white/60'
+        isCurrent ? 'border-sonic-green bg-sonic-green/15 text-sonic-green' : 'border-white/10 bg-white/5 text-white/60'
       }`;
     });
   }
@@ -328,6 +328,14 @@ export class SettingsModal {
   private applyAccentColor(color: string) {
     localStorage.setItem('spotmusic_accent_color', color);
     document.documentElement.style.setProperty('--accent-color', color);
+
+    try {
+      const hex = color.replace('#', '');
+      const r = parseInt(hex.substring(0, 2), 16);
+      const g = parseInt(hex.substring(2, 4), 16);
+      const b = parseInt(hex.substring(4, 6), 16);
+      document.documentElement.style.setProperty('--accent-color-rgb', `${r}, ${g}, ${b}`);
+    } catch {}
 
     const accentButtons = this.overlay.querySelectorAll('.btn-accent-color');
     accentButtons.forEach(b => {

@@ -100,20 +100,31 @@ class DownloadEngine {
     const track = task.track;
     let url = track.audio_url;
 
-    // Resolve full audio stream if missing or preview
-    if (!url || url.includes('apple.com') || url.includes('mzstatic') || url.includes('preview') || track.duration_ms === 30000) {
+    // Resolve full audio stream if missing or preview (NEVER download 30s previews)
+    const isPreview = !url || url.includes('apple.com') || url.includes('mzstatic') || url.includes('preview') || track.duration_ms === 30000;
+    if (isPreview) {
+      task.percent = 15;
+      this.notify();
       try {
         const resolved = await streamResolver.resolveFullAudio(track.name, track.artists);
-        if (resolved) {
+        if (resolved && resolved.source !== 'fallback' && resolved.durationMs > 40000) {
           url = resolved.audioUrl;
           track.audio_url = resolved.audioUrl;
           track.duration_ms = resolved.durationMs;
           track.duration_str = resolved.durationStr;
           track.format = resolved.format;
           if (resolved.coverUrl) track.cover_url = resolved.coverUrl;
+        } else {
+          task.status = 'error';
+          task.error = 'No se encontró la canción completa para descargar (solo disponible en streaming)';
+          this.notify();
+          return;
         }
-      } catch (err) {
-        console.warn('Stream resolver error during download:', err);
+      } catch (err: any) {
+        task.status = 'error';
+        task.error = err.message || 'Audio completo no disponible';
+        this.notify();
+        return;
       }
     }
 
@@ -124,52 +135,79 @@ class DownloadEngine {
       return;
     }
 
+    const ext = url.includes('.mp4') ? 'm4a' : 'mp3';
+    const filename = `${track.artists} - ${track.name}.${ext}`.replace(/[\/\\?%*:|"<>]/g, '_');
+    const relPath = `${this.downloadFolder}/${filename}`;
+    let localPath = '';
+    let fileSizeStr = 'Full Audio';
+
     try {
       task.percent = 30;
       this.notify();
 
-      const response = await fetch(url);
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      // 1. Download file directly to device storage using Capacitor Filesystem native download
+      try {
+        const dlResult = await Filesystem.downloadFile({
+          url,
+          path: relPath,
+          directory: Directory.Documents,
+          recursive: true
+        });
+        if (dlResult && dlResult.path) {
+          localPath = dlResult.path;
+        }
+      } catch (dlErr) {
+        console.warn('Filesystem.downloadFile notice:', dlErr);
+      }
 
       task.percent = 60;
       this.notify();
 
-      const blob = await response.blob();
-      
-      // Save Blob directly to IndexedDB for instant, zero-CORS offline playback
-      await localLibrary.saveAudioBlob(track.id, blob);
-
-      task.percent = 80;
-      this.notify();
-
-      const reader = new FileReader();
-      const base64Data = await new Promise<string>((resolve, reject) => {
-        reader.onloadend = () => {
-          const res = reader.result as string;
-          const base64 = res.split(',')[1] || res;
-          resolve(base64);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      });
-
-      task.percent = 90;
-      this.notify();
-
-      const ext = url.includes('.mp4') ? 'm4a' : 'mp3';
-      const filename = `${track.artists} - ${track.name}.${ext}`.replace(/[\/\\?%*:|"<>]/g, '_');
-      let localPath = '';
-
+      // 2. Fetch or create blob to store in IndexedDB for 100% offline instant playback
       try {
-        const writeRes = await Filesystem.writeFile({
-          path: `${this.downloadFolder}/${filename}`,
-          data: base64Data,
-          directory: Directory.Documents,
-          recursive: true
-        });
-        localPath = writeRes.uri;
-      } catch (fsErr) {
-        console.warn('Filesystem write notice, saved in offline IndexedDB:', fsErr);
+        let blob: Blob | null = null;
+        try {
+          const resp = await fetch(url);
+          if (resp.ok) {
+            blob = await resp.blob();
+          }
+        } catch {}
+
+        if (!blob && localPath) {
+          try {
+            const fileData = await Filesystem.readFile({
+              path: relPath,
+              directory: Directory.Documents
+            });
+            if (fileData && typeof fileData.data === 'string') {
+              const byteCharacters = atob(fileData.data);
+              const byteNumbers = new Array(byteCharacters.length);
+              for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
+              }
+              const byteArray = new Uint8Array(byteNumbers);
+              blob = new Blob([byteArray], { type: ext === 'm4a' ? 'audio/mp4' : 'audio/mpeg' });
+            }
+          } catch {}
+        }
+
+        if (blob) {
+          await localLibrary.saveAudioBlob(track.id, blob);
+          fileSizeStr = (blob.size / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+      } catch (blobErr) {
+        console.warn('Audio blob cache notice:', blobErr);
+      }
+
+      task.percent = 85;
+      this.notify();
+
+      if (!localPath) {
+        const uriRes = await Filesystem.getUri({
+          path: relPath,
+          directory: Directory.Documents
+        }).catch(() => null);
+        if (uriRes) localPath = uriRes.uri;
       }
 
       // Save to local offline library
@@ -179,7 +217,7 @@ class DownloadEngine {
         localPath: localPath || url,
         audio_url: localPath || url,
         format: track.format || this.quality.toUpperCase(),
-        size: (blob.size / (1024 * 1024)).toFixed(1) + ' MB',
+        size: fileSizeStr,
         addedAt: Date.now()
       };
 
@@ -189,7 +227,7 @@ class DownloadEngine {
       task.percent = 100;
       this.notify();
     } catch (err: any) {
-      console.error('Download error:', err);
+      console.error('Download execution error:', err);
       task.status = 'error';
       task.error = err.message || 'Error en la descarga';
       this.notify();

@@ -27,6 +27,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   const savedAccent = localStorage.getItem('spotmusic_accent_color') || '#1ED760';
   document.documentElement.style.setProperty('--accent-color', savedAccent);
+  try {
+    const hex = savedAccent.replace('#', '');
+    const r = parseInt(hex.substring(0, 2), 16);
+    const g = parseInt(hex.substring(2, 4), 16);
+    const b = parseInt(hex.substring(4, 6), 16);
+    document.documentElement.style.setProperty('--accent-color-rgb', `${r}, ${g}, ${b}`);
+  } catch {}
 
   // 1. Initialize Components
   const vinylDeck = new VinylDeck('vinyl-deck-container');
@@ -161,13 +168,31 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
+  // View Tracking and Mini-Player Visibility Manager
+  let currentActiveViewId = 'view-player';
+
+  function updateMiniPlayerVisibility() {
+    if (!miniPlayerBar) return;
+    // On the main turntable player screen, NEVER show duplicate mini player controls
+    if (currentActiveViewId === 'view-player') {
+      miniPlayerBar.classList.add('hidden');
+    } else {
+      // In Library or Downloads views, show mini player if a track is active
+      if (audioEngine.currentTrack) {
+        miniPlayerBar.classList.remove('hidden');
+      } else {
+        miniPlayerBar.classList.add('hidden');
+      }
+    }
+  }
+
   // 4. Audio Engine Event Listeners
   audioEngine.on('play', () => {
     if (iconPlayHero) iconPlayHero.style.display = 'none';
     if (iconPauseHero) iconPauseHero.style.display = 'block';
     if (iconMiniPlay) iconMiniPlay.style.display = 'none';
     if (iconMiniPause) iconMiniPause.style.display = 'block';
-    miniPlayerBar?.classList.remove('hidden');
+    updateMiniPlayerVisibility();
   });
 
   audioEngine.on('pause', () => {
@@ -180,10 +205,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   audioEngine.on('trackchange', (track: Track) => {
     if (trackNameEl) trackNameEl.textContent = track.name;
     if (trackArtistEl) trackArtistEl.textContent = `${track.artists} · ${track.album || 'SpotMusic'}`;
-    if (miniPlayerBar) miniPlayerBar.classList.remove('hidden');
     if (miniPlayerTitle) miniPlayerTitle.textContent = track.name;
     if (miniPlayerArtist) miniPlayerArtist.textContent = track.artists;
     if (miniPlayerCover) miniPlayerCover.src = track.cover_url || '/logo.png';
+    updateMiniPlayerVisibility();
     updateFavoriteButton(track.isFavorite || false);
     localLibrary.logHistory(track);
   });
@@ -229,6 +254,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const dockButtons = document.querySelectorAll('.nav-dock-btn');
 
   function switchView(targetViewId: string) {
+    currentActiveViewId = targetViewId;
     Object.keys(views).forEach(id => {
       const el = (views as any)[id];
       if (id === targetViewId) {
@@ -249,6 +275,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (icon) icon.setAttribute('fill', 'none');
       }
     });
+
+    updateMiniPlayerVisibility();
 
     if (targetViewId === 'view-library') refreshLibraryView();
     if (targetViewId === 'view-downloads') renderDownloadedTracks();

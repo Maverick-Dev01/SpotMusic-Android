@@ -339,10 +339,10 @@ export class SearchModal {
     }
 
     this.resultsContainer.innerHTML = tracks.map((t, idx) => `
-      <div class="flex items-center justify-between p-2.5 rounded-2xl hover:bg-white/5 transition-all group" data-idx="${idx}">
-        <div class="flex items-center gap-3 min-w-0 flex-1 cursor-pointer btn-play-row">
+      <div class="flex items-center justify-between p-2.5 rounded-2xl hover:bg-white/5 active:scale-[0.98] transition-all cursor-pointer group" data-idx="${idx}">
+        <div class="flex items-center gap-3 min-w-0 flex-1 pointer-events-none">
           <div class="relative w-11 h-11 rounded-xl overflow-hidden flex-shrink-0 bg-obsidian-800 border border-white/10">
-            <img src="${t.cover_url}" alt="Cover" class="w-full h-full object-cover" onerror="this.style.display='none'" />
+            <img src="${t.cover_url || '/logo.png'}" alt="Cover" class="w-full h-full object-cover" onerror="this.src='/logo.png'" />
           </div>
           <div class="min-w-0 flex-1">
             <h4 class="text-xs font-semibold text-white truncate">${t.name}</h4>
@@ -350,11 +350,11 @@ export class SearchModal {
           </div>
         </div>
 
-        <div class="flex items-center gap-1.5 pl-2">
-          <!-- Direct Play Button (Requested by user) -->
-          <button class="btn-play-action p-2 rounded-xl bg-sonic-green text-black hover:bg-emerald-400 font-bold flex items-center justify-center active:scale-90 shadow-md shadow-green-500/20 transition-all" title="Reproducir ahora" data-idx="${idx}">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg>
-          </button>
+        <div class="flex items-center gap-2 pl-2">
+          <!-- Play indicator badge -->
+          <div class="w-8 h-8 rounded-full bg-sonic-green/20 text-sonic-green flex items-center justify-center group-hover:bg-sonic-green group-hover:text-black transition-all">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+          </div>
           <!-- Direct Download Button -->
           <button class="btn-download-result p-2 rounded-xl bg-white/10 text-white/80 hover:text-white hover:bg-white/15 text-xs font-medium flex items-center justify-center active:scale-90 transition-all" title="Descargar tema" data-idx="${idx}">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -363,7 +363,7 @@ export class SearchModal {
       </div>
     `).join('');
 
-    // Play click (row or direct Play button)
+    // Play click (clicking anywhere on the track row immediately plays)
     const handlePlay = (idx: number) => {
       audioEngine.playTrack(tracks[idx]);
       this.close();
@@ -371,24 +371,22 @@ export class SearchModal {
       navPlayerBtn?.click();
     };
 
-    this.resultsContainer.querySelectorAll('.btn-play-row').forEach((el, i) => {
-      el.addEventListener('click', () => handlePlay(i));
-    });
-
-    this.resultsContainer.querySelectorAll('.btn-play-action').forEach((btn, i) => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        handlePlay(i);
+    this.resultsContainer.querySelectorAll('[data-idx]').forEach((row) => {
+      row.addEventListener('click', (e) => {
+        if ((e.target as HTMLElement).closest('.btn-download-result')) return;
+        const idx = parseInt(row.getAttribute('data-idx') || '0', 10);
+        handlePlay(idx);
       });
     });
 
     // Download click
-    this.resultsContainer.querySelectorAll('.btn-download-result').forEach((btn, i) => {
+    this.resultsContainer.querySelectorAll('.btn-download-result').forEach((btn) => {
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
+        const idx = parseInt(btn.getAttribute('data-idx') || '0', 10);
         try {
           btn.innerHTML = `<span class="w-3.5 h-3.5 rounded-full border border-sonic-green border-t-transparent animate-spin"></span>`;
-          await downloadEngine.addDownload(tracks[i]);
+          await downloadEngine.addDownload(tracks[idx]);
           btn.innerHTML = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" class="text-sonic-green"><polyline points="20 6 9 17 4 12"/></svg>`;
         } catch (err: any) {
           alert(err.message || 'Error al iniciar descarga');

@@ -1,3 +1,4 @@
+import { CapacitorHttp } from '@capacitor/core';
 import CryptoJS from 'crypto-js';
 
 export interface ResolvedAudio {
@@ -12,6 +13,7 @@ export interface ResolvedAudio {
 }
 
 class StreamResolver {
+  private cache: Map<string, ResolvedAudio> = new Map();
   private scClientId: string = 'Pb72ranhoyt6gw7hM7TkzUItXlMWSNSo';
   private backupScClientIds: string[] = [
     'Pb72ranhoyt6gw7hM7TkzUItXlMWSNSo',
@@ -23,23 +25,54 @@ class StreamResolver {
     this.refreshSoundCloudClientId();
   }
 
+  private async httpGet(url: string, headers: Record<string, string> = {}, timeoutMs = 4000): Promise<any> {
+    // 1. Prefer native CapacitorHttp on Android: NO CORS, NO origin restrictions!
+    try {
+      const res = await CapacitorHttp.get({
+        url,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+          'Accept': 'application/json, text/plain, */*',
+          ...headers
+        },
+        connectTimeout: timeoutMs,
+        readTimeout: timeoutMs
+      });
+      if (res.status >= 200 && res.status < 300) {
+        if (typeof res.data === 'string') {
+          try {
+            return JSON.parse(res.data);
+          } catch {
+            return res.data;
+          }
+        }
+        return res.data;
+      }
+    } catch (e) {
+      // 2. Fallback to window.fetch
+      try {
+        const r = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+        if (r.ok) return await r.json();
+      } catch {}
+    }
+    return null;
+  }
+
   private async refreshSoundCloudClientId() {
     try {
-      const pageRes = await fetch('https://soundcloud.com', { signal: AbortSignal.timeout(4000) });
-      if (!pageRes.ok) return;
-      const html = await pageRes.text();
+      const pageData = await this.httpGet('https://soundcloud.com');
+      const html = typeof pageData === 'string' ? pageData : JSON.stringify(pageData || '');
       const scriptUrls = [...html.matchAll(/https:\/\/a-v2\.sndcdn\.com\/assets\/[a-zA-Z0-9-]+\.js/g)].map(m => m[0]);
       for (const s of scriptUrls.slice(-4)) {
-        const js = await (await fetch(s, { signal: AbortSignal.timeout(3000) })).text();
+        const jsData = await this.httpGet(s);
+        const js = typeof jsData === 'string' ? jsData : '';
         const match = js.match(/client_id:"([a-zA-Z0-9]{32})"/);
         if (match && match[1]) {
           this.scClientId = match[1];
           break;
         }
       }
-    } catch (e) {
-      // silently keep working client ID
-    }
+    } catch (e) {}
   }
 
   private decryptJioMediaUrl(encUrl: string): string | null {
@@ -82,10 +115,8 @@ class StreamResolver {
   public async resolveJioSaavn(query: string): Promise<ResolvedAudio | null> {
     try {
       const url = `https://www.jiosaavn.com/api.php?__call=search.getResults&_format=json&_marker=0&n=3&p=1&q=${encodeURIComponent(query)}`;
-      const res = await fetch(url, { signal: AbortSignal.timeout(3500) });
-      if (!res.ok) return null;
-      const data = await res.json();
-      if (!data.results || !data.results.length) return null;
+      const data = await this.httpGet(url, {}, 3500);
+      if (!data || !data.results || !data.results.length) return null;
 
       for (const item of data.results) {
         if (item.encrypted_media_url) {
@@ -119,30 +150,25 @@ class StreamResolver {
     for (const cId of clientIds) {
       try {
         const url = `https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(query)}&client_id=${cId}&limit=4`;
-        const res = await fetch(url, { signal: AbortSignal.timeout(3500) });
-        if (!res.ok) continue;
-        const data = await res.json();
-        if (!data.collection || !data.collection.length) continue;
+        const data = await this.httpGet(url, {}, 3500);
+        if (!data || !data.collection || !data.collection.length) continue;
 
         for (const track of data.collection) {
           const prog = track.media?.transcodings?.find((t: any) => t.format?.protocol === 'progressive');
           if (prog) {
-            const streamRes = await fetch(`${prog.url}?client_id=${cId}`, { signal: AbortSignal.timeout(3000) });
-            if (streamRes.ok) {
-              const streamData = await streamRes.json();
-              if (streamData.url) {
-                const durSec = Math.round((track.duration || 180000) / 1000);
-                return {
-                  audioUrl: streamData.url,
-                  durationMs: durSec * 1000,
-                  durationStr: this.formatDuration(durSec),
-                  format: 'MP3 Estándar (Full)',
-                  source: 'soundcloud',
-                  coverUrl: track.artwork_url?.replace('large', 't500x500'),
-                  title: track.title,
-                  artist: track.user?.username
-                };
-              }
+            const streamData = await this.httpGet(`${prog.url}?client_id=${cId}`, {}, 3000);
+            if (streamData && streamData.url) {
+              const durSec = Math.round((track.duration || 180000) / 1000);
+              return {
+                audioUrl: streamData.url,
+                durationMs: durSec * 1000,
+                durationStr: this.formatDuration(durSec),
+                format: 'MP3 Estándar (Full)',
+                source: 'soundcloud',
+                coverUrl: track.artwork_url?.replace('large', 't500x500'),
+                title: track.title,
+                artist: track.user?.username
+              };
             }
           }
         }
@@ -154,22 +180,19 @@ class StreamResolver {
   public async resolveFallbackPreview(title: string, artist: string): Promise<ResolvedAudio | null> {
     try {
       const q = encodeURIComponent(`${title} ${artist}`);
-      const res = await fetch(`https://itunes.apple.com/search?term=${q}&media=music&limit=1`, { signal: AbortSignal.timeout(3500) });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.results && data.results.length > 0) {
-          const item = data.results[0];
-          return {
-            audioUrl: item.previewUrl,
-            durationMs: (item.trackTimeMillis && item.trackTimeMillis > 40000) ? 30000 : (item.trackTimeMillis || 30000),
-            durationStr: '0:30',
-            format: 'Preview AAC',
-            source: 'fallback',
-            coverUrl: item.artworkUrl100?.replace('100x100bb', '600x600bb'),
-            title: item.trackName,
-            artist: item.artistName
-          };
-        }
+      const data = await this.httpGet(`https://itunes.apple.com/search?term=${q}&media=music&limit=1`, {}, 3000);
+      if (data && data.results && data.results.length > 0) {
+        const item = data.results[0];
+        return {
+          audioUrl: item.previewUrl,
+          durationMs: (item.trackTimeMillis && item.trackTimeMillis > 40000) ? 30000 : (item.trackTimeMillis || 30000),
+          durationStr: '0:30',
+          format: 'Preview AAC',
+          source: 'fallback',
+          coverUrl: item.artworkUrl100?.replace('100x100bb', '600x600bb'),
+          title: item.trackName,
+          artist: item.artistName
+        };
       }
     } catch (e) {}
     return null;
@@ -178,33 +201,54 @@ class StreamResolver {
   public async resolveFullAudio(title: string, artist: string): Promise<ResolvedAudio | null> {
     const cleanT = this.cleanTitle(title);
     const query = `${cleanT} ${artist}`.trim();
+    const cacheKey = `${cleanT}---${artist}`.toLowerCase();
 
-    // 1. Check JioSaavn for 320 KBPS AAC high-fidelity full audio
-    let result = await this.resolveJioSaavn(query);
-    if (result && result.durationMs > 60000) {
-      return result;
+    // Check memory cache for 0ms instant playback
+    if (this.cache.has(cacheKey)) {
+      return this.cache.get(cacheKey)!;
     }
 
-    // 2. Check SoundCloud for full-length track (excellent for Latin, reggaeton, electronic)
-    result = await this.resolveSoundCloud(query);
-    if (result && result.durationMs > 60000) {
-      return result;
+    // Run JioSaavn and SoundCloud in PARALLEL for sub-second resolution
+    try {
+      const [jioRes, scRes] = await Promise.all([
+        this.resolveJioSaavn(query).catch(() => null),
+        this.resolveSoundCloud(query).catch(() => null)
+      ]);
+
+      // Choose high-fidelity stream with duration > 60s
+      if (jioRes && jioRes.durationMs > 60000) {
+        this.cache.set(cacheKey, jioRes);
+        return jioRes;
+      }
+      if (scRes && scRes.durationMs > 60000) {
+        this.cache.set(cacheKey, scRes);
+        return scRes;
+      }
+
+      // Retry in parallel with just song title if artist caused a mismatch
+      const [jioTitleRes, scTitleRes] = await Promise.all([
+        this.resolveJioSaavn(cleanT).catch(() => null),
+        this.resolveSoundCloud(cleanT).catch(() => null)
+      ]);
+
+      if (jioTitleRes && jioTitleRes.durationMs > 60000) {
+        this.cache.set(cacheKey, jioTitleRes);
+        return jioTitleRes;
+      }
+      if (scTitleRes && scTitleRes.durationMs > 60000) {
+        this.cache.set(cacheKey, scTitleRes);
+        return scTitleRes;
+      }
+    } catch (e) {
+      console.warn('Fast parallel stream resolution notice:', e);
     }
 
-    // 3. Retry SoundCloud with just the clean song title
-    result = await this.resolveSoundCloud(cleanT);
-    if (result && result.durationMs > 60000) {
-      return result;
+    // Ultimate fallback if offline or no network
+    const fallback = await this.resolveFallbackPreview(cleanT, artist);
+    if (fallback) {
+      this.cache.set(cacheKey, fallback);
     }
-
-    // 4. Retry JioSaavn with clean song title
-    result = await this.resolveJioSaavn(cleanT);
-    if (result && result.durationMs > 60000) {
-      return result;
-    }
-
-    // 5. Ultimate fallback to ensure music plays
-    return await this.resolveFallbackPreview(cleanT, artist);
+    return fallback;
   }
 }
 
