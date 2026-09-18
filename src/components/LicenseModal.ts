@@ -1,5 +1,6 @@
 import { appDialog } from './AppDialog';
 import { licenseClient, licenseDetails } from '../services/licenseClient';
+import { copyToClipboard } from '../utils/clipboard';
 
 export class LicenseModal {
   private overlay: HTMLElement;
@@ -73,14 +74,20 @@ export class LicenseModal {
 
     document.getElementById('btn-copy-device-id')?.addEventListener('click', async () => {
       const devId = await licenseClient.getDeviceId();
-      await navigator.clipboard.writeText(devId);
+      const success = await copyToClipboard(devId);
+      const copyBtn = document.getElementById('btn-copy-device-id');
       const textSpan = document.getElementById('copy-device-id-text');
       if (textSpan) {
-        textSpan.textContent = '¡Copiado! ✓';
-        setTimeout(() => {
-          if (textSpan) textSpan.textContent = 'Copiar';
-        }, 2000);
+        textSpan.textContent = success ? '¡Copiado! ✓' : 'Error al copiar';
       }
+      if (copyBtn) {
+        copyBtn.classList.add('!bg-emerald-500/20', '!text-emerald-400');
+      }
+      await appDialog.alert(`ID del dispositivo copiado al portapapeles:\n\n${devId}`);
+      setTimeout(() => {
+        if (textSpan) textSpan.textContent = 'Copiar';
+        if (copyBtn) copyBtn.classList.remove('!bg-emerald-500/20', '!text-emerald-400');
+      }, 2500);
     });
 
     document.getElementById('btn-remove-license')?.addEventListener('click', async () => {

@@ -157,6 +157,15 @@ class StreamResolver {
     candidate: Pick<ResolvedAudio, 'title' | 'artist' | 'durationMs'>
   ): number {
     const titleScore = this.similarity(this.cleanTitle(title), candidate.title || '');
+    const unwanted = ['remix', 'nightcore', '8d audio', 'slowed', 'reverb', 'cover', 'live', 'extended mix', '1 hour', '10 hours', 'mix'];
+    const titleLower = title.toLowerCase();
+    const candLower = (candidate.title || '').toLowerCase();
+    for (const word of unwanted) {
+      if (!titleLower.includes(word) && candLower.includes(word)) {
+        return 0;
+      }
+    }
+
     const firstArtist = (artist || '').split(/[,&/]/)[0].trim();
     const artistScore = this.similarity(firstArtist, candidate.artist || '');
     const durationScore = durationMs && candidate.durationMs
@@ -257,18 +266,18 @@ class StreamResolver {
   }
 
   private serverEndpoints: string[] = [
+    'http://192.168.1.143:3000/api/stream',
     'https://license-eight-ruby.vercel.app/api/stream',
     '/api/stream',
-    'http://192.168.1.143:3000/api/stream',
     'http://localhost:3000/api/stream',
     'https://license-dwtlltjib-lamb-dev.vercel.app/api/stream'
   ];
 
-  public async resolveServerStream(title: string, artist: string): Promise<ResolvedAudio | null> {
+  public async resolveServerStream(title: string, artist: string, expectedDurationMs?: number): Promise<ResolvedAudio | null> {
     const query = `${this.cleanTitle(title)} ${artist}`.trim();
     for (const ep of this.serverEndpoints) {
       try {
-        const url = `${ep}?q=${encodeURIComponent(query)}&title=${encodeURIComponent(title)}&artist=${encodeURIComponent(artist)}`;
+        const url = `${ep}?q=${encodeURIComponent(query)}&title=${encodeURIComponent(title)}&artist=${encodeURIComponent(artist)}${expectedDurationMs ? `&durationMs=${expectedDurationMs}` : ''}`;
         let data: any = null;
         if (typeof Capacitor !== 'undefined' && Capacitor.isNativePlatform?.() && Capacitor.getPlatform() === 'android') {
           const res = await CapacitorHttp.get({ url, connectTimeout: 3000, readTimeout: 3000 });
@@ -278,16 +287,26 @@ class StreamResolver {
           if (res.ok) data = await res.json();
         }
         if (data && data.success && data.audioUrl) {
+          const score = this.matchScore(title, artist, expectedDurationMs, {
+            title: data.title || title,
+            artist: data.artist || artist,
+            durationMs: data.durationMs
+          });
+          // Strictly reject server response if match score is below 0.50 (e.g. wrong artist or wrong song)
+          if (score < 0.50 && (data.matchScore || 0) < 0.50) {
+            console.warn('Server stream candidate rejected due to mismatch:', data.title, data.artist, 'expected:', title, artist);
+            continue;
+          }
           return {
             audioUrl: data.audioUrl,
             durationMs: data.durationMs || 180000,
             durationStr: data.durationStr || '3:00',
             format: data.format || 'MP4 / 320kbps (Hi-Fi)',
-            source: 'jiosaavn',
+            source: (data.source as any) || 'jiosaavn',
             coverUrl: data.coverUrl,
             title: data.title || title,
             artist: data.artist || artist,
-            matchScore: 1.0
+            matchScore: score || data.matchScore || 0.9
           };
         }
       } catch {}
@@ -306,7 +325,7 @@ class StreamResolver {
 
     // 1. High-speed CORS server stream resolver (Instant, works 100% on iOS Web, PWA, Safari, and Capacitor)
     try {
-      const serverStream = await this.resolveServerStream(cleanT, artist);
+      const serverStream = await this.resolveServerStream(cleanT, artist, expectedDurationMs);
       if (serverStream) {
         this.cache.set(cacheKey, serverStream);
         return serverStream;

@@ -6,6 +6,7 @@ import { downloadEngine } from '../services/downloadEngine';
 import { storagePicker } from '../services/storagePicker';
 import { spotifyAuth } from '../services/spotifyAuth';
 import { audioEngine } from '../services/audioEngine';
+import { copyToClipboard } from '../utils/clipboard';
 
 export class SettingsModal {
   private overlay: HTMLElement;
@@ -257,12 +258,20 @@ export class SettingsModal {
     // Copy Device ID
     document.getElementById('btn-settings-copy-device-id')?.addEventListener('click', async () => {
       const devId = await licenseClient.getDeviceId();
-      await navigator.clipboard.writeText(devId);
+      const success = await copyToClipboard(devId);
+      const copyBtn = document.getElementById('btn-settings-copy-device-id');
       const copyText = document.getElementById('settings-copy-text');
       if (copyText) {
-        copyText.textContent = '¡Copiado! ✓';
-        setTimeout(() => { if (copyText) copyText.textContent = 'Copiar'; }, 2000);
+        copyText.textContent = success ? '¡Copiado! ✓' : 'Error al copiar';
       }
+      if (copyBtn) {
+        copyBtn.classList.add('!bg-emerald-500/20', '!text-emerald-400');
+      }
+      await appDialog.alert(`ID del dispositivo copiado al portapapeles:\n\n${devId}`);
+      setTimeout(() => {
+        if (copyText) copyText.textContent = 'Copiar';
+        if (copyBtn) copyBtn.classList.remove('!bg-emerald-500/20', '!text-emerald-400');
+      }, 2500);
     });
 
     // Activate License Token
