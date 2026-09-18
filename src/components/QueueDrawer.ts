@@ -12,7 +12,7 @@ export class QueueDrawer {
     this.overlay.className = 'fixed inset-0 bg-black/70 backdrop-blur-md z-50 flex flex-col justify-end transition-opacity duration-300 opacity-0 pointer-events-none';
 
     this.overlay.innerHTML = `
-      <div class="bg-obsidian-800 border-t border-white/10 rounded-t-[32px] p-5 max-h-[82vh] flex flex-col shadow-2xl transform translate-y-full transition-transform duration-300 ease-out" id="queue-drawer-sheet">
+      <div class="bg-obsidian-800 border-t border-white/10 rounded-t-[32px] p-5 pb-[max(calc(var(--sab,0px)+16px),24px)] max-h-[82vh] flex flex-col shadow-2xl transform translate-y-full transition-transform duration-300 ease-out w-full max-w-2xl mx-auto" id="queue-drawer-sheet">
         <!-- Drag pill handle -->
         <div class="w-12 h-1.5 bg-white/20 rounded-full mx-auto mb-4 cursor-pointer"></div>
 

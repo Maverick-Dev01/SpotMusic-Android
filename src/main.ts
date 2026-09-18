@@ -20,8 +20,14 @@ import { FolderModal, folderModal } from './components/FolderModal';
 import { UpdatesModal } from './components/UpdatesModal';
 import { updaterClient } from './services/updaterClient';
 import { spotifyAuth } from './services/spotifyAuth';
+import { setupSafeAreaAndDeviceAdaptation } from './utils/deviceAdaptation';
+
+setupSafeAreaAndDeviceAdaptation();
+window.addEventListener('resize', setupSafeAreaAndDeviceAdaptation);
+window.addEventListener('orientationchange', setupSafeAreaAndDeviceAdaptation);
 
 document.addEventListener('DOMContentLoaded', async () => {
+  setupSafeAreaAndDeviceAdaptation();
   document.addEventListener('error', event => {
     const image = event.target as HTMLImageElement;
     if (!(image instanceof HTMLImageElement)) return;
