@@ -6,6 +6,7 @@ import { audioEngine } from '../services/audioEngine';
 import { downloadEngine } from '../services/downloadEngine';
 import { localLibrary } from '../services/localLibrary';
 import { Track } from '../types';
+import { streamResolver } from '../services/streamResolver';
 
 export class SearchModal {
   private overlay: HTMLElement;
@@ -384,6 +385,11 @@ export class SearchModal {
       </div>
     `).join('');
 
+    // Speculatively resolve first track in background so tap-to-play starts instantly
+    if (tracks.length > 0) {
+      streamResolver.resolveFullAudio(tracks[0].name, tracks[0].artists, tracks[0].duration_ms).catch(() => {});
+    }
+
     // Play click (clicking anywhere on the track row immediately plays)
     const handlePlay = (idx: number) => {
       audioEngine.playTrack(tracks[idx]);
@@ -393,6 +399,14 @@ export class SearchModal {
     };
 
     this.resultsContainer.querySelectorAll('[data-idx]').forEach((row) => {
+      // Early prefetch on pointerdown/touch so stream is inflight before click fires
+      row.addEventListener('pointerdown', () => {
+        const idx = parseInt(row.getAttribute('data-idx') || '0', 10);
+        if (tracks[idx]) {
+          streamResolver.resolveFullAudio(tracks[idx].name, tracks[idx].artists, tracks[idx].duration_ms).catch(() => {});
+        }
+      }, { passive: true });
+
       row.addEventListener('click', (e) => {
         if ((e.target as HTMLElement).closest('.btn-download-result')) return;
         const idx = parseInt(row.getAttribute('data-idx') || '0', 10);
