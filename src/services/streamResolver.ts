@@ -257,10 +257,10 @@ class StreamResolver {
   }
 
   private serverEndpoints: string[] = [
+    'https://license-eight-ruby.vercel.app/api/stream',
     '/api/stream',
     'http://192.168.1.143:3000/api/stream',
     'http://localhost:3000/api/stream',
-    'https://license-eight-ruby.vercel.app/api/stream',
     'https://license-dwtlltjib-lamb-dev.vercel.app/api/stream'
   ];
 

@@ -290,20 +290,18 @@ class AudioEngine {
     const request = ++this.playRequest;
 
     // Synchronously prime/unlock HTMLAudioElement on iOS Safari / WebKit during user click tick
+    // Keep silent audio playing so iOS WebKit preserves the user-gesture token across async resolution
     if (!this.isNative) {
       try {
         if (this.audioCtx && this.audioCtx.state === 'suspended') {
           void this.audioCtx.resume();
         }
-        if (!this.audio.src) {
-          this.audio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
-          const p = this.audio.play();
-          if (p) p.then(() => this.audio.pause()).catch(() => {});
-        }
+        this.audio.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
+        const p = this.audio.play();
+        if (p) p.catch(() => {});
       } catch {}
     }
 
-    this.audio.pause();
     this.currentIndex = index;
     const track = this.queue[index];
 

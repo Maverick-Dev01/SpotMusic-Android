@@ -106,6 +106,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('btn-open-playlists-tab')?.addEventListener('click', () => playlistModal.open());
   document.getElementById('nav-btn-playlists')?.addEventListener('click', () => playlistModal.open());
 
+  // Quick In-App Reload Trigger (Forces cache-bust on iOS Safari and WebClips)
+  const triggerHardReload = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('v', String(Date.now()));
+    window.location.href = url.toString();
+  };
+  document.getElementById('btn-quick-refresh')?.addEventListener('click', triggerHardReload);
+  document.getElementById('btn-header-reload')?.addEventListener('click', triggerHardReload);
+
   // In-Player Direct Download Button
   const btnPlayerDownload = document.getElementById('btn-player-download');
   btnPlayerDownload?.addEventListener('click', async () => {
