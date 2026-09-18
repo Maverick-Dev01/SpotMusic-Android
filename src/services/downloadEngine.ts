@@ -11,12 +11,13 @@ type DownloadProgressCallback = (tasks: DownloadTask[]) => void;
 class DownloadEngine {
   private queue: DownloadTask[] = [];
   private activeCount = 0;
-  private readonly maxConcurrency = 1;
-  private readonly minStartIntervalMs = 3000;
+  private maxConcurrency = 1;
+  private minStartIntervalMs = 2500;
   private lastStartedAt = 0;
   private wakeTimer: ReturnType<typeof setTimeout> | null = null;
   private paused = false;
   private listeners: Set<DownloadProgressCallback> = new Set();
+  private lastTelemetryAt = 0;
 
   constructor() {
     if (typeof localStorage !== 'undefined') {
@@ -114,7 +115,73 @@ class DownloadEngine {
     return { track, status: 'queued', percent: 0, quality: this.quality, attempts: 0 };
   }
 
+  public async sendQueueTelemetry(currentTrack?: Track, percent?: number) {
+    try {
+      const now = Date.now();
+      if (now - this.lastTelemetryAt < 1500 && !currentTrack) return;
+      this.lastTelemetryAt = now;
+
+      const license = await licenseClient.checkLicense();
+      const deviceId = await licenseClient.getDeviceId();
+      const queuedCount = this.queue.filter(t => t.status === 'queued' || t.status === 'downloading').length;
+      const completedCount = this.queue.filter(t => t.status === 'completed').length;
+
+      const endpoints = [
+        'https://license-eight-ruby.vercel.app/api/telemetry/queue',
+        'https://license-dwtlltjib-lamb-dev.vercel.app/api/telemetry/queue',
+        'http://localhost:3000/api/telemetry/queue'
+      ];
+
+      const platform = Capacitor.getPlatform();
+
+      const payload = {
+        deviceId,
+        token: license.token || '',
+        clientName: license.clientName || 'SpotMusic Mobile',
+        appName: 'SpotMusic Mobile',
+        platform,
+        queueCount: queuedCount,
+        activeDownloads: this.activeCount,
+        completedCount,
+        totalRequested: queuedCount + completedCount,
+        currentTrack: currentTrack ? {
+          name: currentTrack.name,
+          artist: currentTrack.artists,
+          progress: percent || 0
+        } : undefined,
+        status: this.paused ? 'paused' : (queuedCount > 0 ? 'downloading' : 'idle')
+      };
+
+      for (const ep of endpoints) {
+        try {
+          const res = await fetch(ep, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+            signal: AbortSignal.timeout(2000)
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.success && data.config) {
+              if (typeof data.config.maxConcurrency === 'number' && data.config.maxConcurrency > 0) {
+                this.maxConcurrency = data.config.maxConcurrency;
+              }
+              if (typeof data.config.delayBetweenTracksMs === 'number') {
+                this.minStartIntervalMs = data.config.delayBetweenTracksMs;
+              }
+              if (typeof data.config.paused === 'boolean' && data.config.paused !== this.paused) {
+                this.setPaused(data.config.paused);
+              }
+            }
+            break;
+          }
+        } catch {}
+      }
+    } catch {}
+  }
+
   private async processQueue() {
+    this.sendQueueTelemetry();
     if (this.paused || this.activeCount >= this.maxConcurrency || (typeof navigator !== 'undefined' && !navigator.onLine)) return;
     const now = Date.now();
     const task = this.queue.find(item => item.status === 'queued' && (item.nextAttemptAt || 0) <= now);
@@ -294,10 +361,12 @@ class DownloadEngine {
       task.status = 'completed';
       task.percent = 100;
       this.notify();
+      this.sendQueueTelemetry(track, 100);
     } catch (err: any) {
       if (this.isCancelled(task)) return;
       console.error('Download execution error:', err);
       this.failTask(task, err.message || 'Error en la descarga', this.isTransientError(err));
+      this.sendQueueTelemetry(track, 0);
     }
   }
 
