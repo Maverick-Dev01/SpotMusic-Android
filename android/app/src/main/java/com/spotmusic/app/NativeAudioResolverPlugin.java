@@ -93,16 +93,20 @@ public class NativeAudioResolverPlugin extends Plugin {
         String candidateArtist = metadata.optString("artist", "");
         long candidateDurationMs = metadata.optLong("durationMs", 0L);
         double titleScore = similarity(title, candidateTitle);
-        double artistScore = similarity(artist, candidateArtist + " " + candidateTitle);
-        if (titleScore < 0.40 || (titleScore < 0.68 && artistScore < 0.18)) {
+        double artistScore = similarity(artist, candidateArtist);
+        if (candidateTitle.toLowerCase(Locale.ROOT).contains(artist.toLowerCase(Locale.ROOT))) {
+            artistScore = Math.max(artistScore, 0.8);
+        }
+        // Allow candidate if it has reasonable similarity or is from official search
+        if (titleScore < 0.20 && artistScore < 0.15) {
             if (audioFile != null) audioFile.delete();
-            throw new Exception("La coincidencia encontrada no corresponde al título y artista");
+            return null;
         }
         if (expectedDurationMs > 60_000 && candidateDurationMs > 0) {
             double difference = Math.abs(candidateDurationMs - expectedDurationMs) / (double) expectedDurationMs;
-            if (difference > 0.38) {
+            if (difference > 0.65) {
                 if (audioFile != null) audioFile.delete();
-                throw new Exception("La coincidencia encontrada no corresponde a la duración de la canción");
+                return null;
             }
         }
 

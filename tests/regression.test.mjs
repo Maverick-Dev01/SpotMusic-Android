@@ -6,13 +6,14 @@ import ts from 'typescript';
 function load(file, dependencies = {}, globals = {}) {
   const exports = {};
   const code = ts.transpileModule(readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  vm.runInNewContext(code, { exports, require: key => dependencies[key] ?? {}, console, AbortSignal, URL, Date, ...globals });
+  vm.runInNewContext(code, { exports, require: key => dependencies[key] ?? {}, console, AbortSignal, URL, Date, setInterval, clearInterval, setTimeout, clearTimeout, ...globals });
   return exports;
 }
 function license(fetch, saved) {
   const data = new Map(saved ? [['spotmusic_mobile_license', JSON.stringify(saved)]] : []);
   return load('src/services/licenseClient.ts', { '@capacitor/device': { Device: { getId: async () => ({ identifier: 'device' }) } } }, {
-    fetch, localStorage: { getItem: key => data.get(key), setItem: (key, value) => data.set(key, value), removeItem: key => data.delete(key) }
+    fetch, localStorage: { getItem: key => data.get(key), setItem: (key, value) => data.set(key, value), removeItem: key => data.delete(key) },
+    setInterval: () => ({ unref() {} }), clearInterval: () => {}
   });
 }
 test('unverified offline token cannot activate a license', async () => {
@@ -64,6 +65,7 @@ class FakeAudio {
   src = ''; paused = true; ended = false; currentTime = 0; duration = 180;
   listeners = new Map();
   addEventListener(name, listener) { this.listeners.set(name, listener); }
+  setAttribute(name, value) {}
   pause() { this.paused = true; }
   load() {}
   removeAttribute() { this.src = ''; }

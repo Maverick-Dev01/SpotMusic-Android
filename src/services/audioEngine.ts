@@ -398,18 +398,18 @@ class AudioEngine {
 
     this.audio.pause();
     if (this.objectUrl) URL.revokeObjectURL(this.objectUrl);
-    this.objectUrl = newObjectUrl;
-
-    this.audio.crossOrigin = 'anonymous';
-    this.audio.setAttribute('playsinline', 'true');
-    this.audio.setAttribute('webkit-playsinline', 'true');
-    this.audio.src = audioUrl;
-
     const localAudio = audioUrl.startsWith('blob:') || audioUrl.startsWith('data:') ||
       (track.isLocal && new URL(audioUrl, location.href).origin === location.origin);
     if (localAudio) {
+      this.audio.crossOrigin = 'anonymous';
       this.initAudioContext();
+    } else {
+      this.audio.removeAttribute('crossorigin');
     }
+
+    this.audio.setAttribute('playsinline', 'true');
+    this.audio.setAttribute('webkit-playsinline', 'true');
+    this.audio.src = audioUrl;
     this.emit('eqavailability', this.equalizerAvailable);
     this.audio.load();
     this.audio.volume = 1.0;

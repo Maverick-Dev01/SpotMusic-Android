@@ -259,19 +259,21 @@ class DownloadEngine {
       this.notify();
       try {
         const resolved = await streamResolver.resolveFullAudio(track.name, track.artists, track.duration_ms);
-        if (resolved && resolved.source !== 'fallback' && resolved.durationMs > 40000) {
+        if (resolved && resolved.audioUrl) {
           url = resolved.audioUrl;
           track.audio_url = resolved.audioUrl;
           track.duration_ms = resolved.durationMs;
           track.duration_str = resolved.durationStr;
           track.format = resolved.format;
           if (resolved.coverUrl) track.cover_url = resolved.coverUrl;
+        } else if (url && !url.includes('apple.com') && !url.includes('mzstatic')) {
+          // Keep existing url if it is not an iTunes preview
         } else {
-          this.failTask(task, 'No se encontró una coincidencia confiable para esta canción.', false);
+          this.failTask(task, 'No se pudo resolver el audio para esta pista.', false);
           return;
         }
       } catch (err: any) {
-        this.failTask(task, err.message || 'Audio completo no disponible', this.isTransientError(err));
+        this.failTask(task, err.message || 'Audio no disponible temporalmente', this.isTransientError(err));
         return;
       }
     }
@@ -334,13 +336,55 @@ class DownloadEngine {
           return;
         }
       } else {
-        const response = await fetch(url, { signal: AbortSignal.timeout(120000) });
-        if (!response.ok) throw new Error(`Descarga rechazada (HTTP ${response.status}). Intenta más tarde.`);
-        const blob = await response.blob();
-        if (!blob.size || /text|json/.test(blob.type)) throw new Error('El servidor no devolvió un archivo de audio');
+        // In Web / iOS Safari, direct fetch(cdnUrl) can be blocked by CORS.
+        // Route through our CORS-enabled /api/download endpoint.
+        const downloadEndpoints = [
+          `http://192.168.1.143:3000/api/download?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(filename)}`,
+          `https://license-eight-ruby.vercel.app/api/download?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(filename)}`,
+          `/api/download?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(filename)}`,
+          url
+        ];
+
+        let blob: Blob | null = null;
+        for (const ep of downloadEndpoints) {
+          try {
+            const response = await fetch(ep, { signal: AbortSignal.timeout(60000) });
+            if (response.ok) {
+              const b = await response.blob();
+              if (b.size > 10000 && !/text|json/.test(b.type)) {
+                blob = b;
+                break;
+              }
+            }
+          } catch (e) {
+            console.warn('Download endpoint try notice:', ep, e);
+          }
+        }
+
+        if (!blob || !blob.size) {
+          throw new Error('No se pudo descargar el archivo de audio. Comprueba tu conexión.');
+        }
+
         if (this.isCancelled(task)) return;
         await localLibrary.saveAudioBlob(track.id, blob);
         fileSizeStr = (blob.size / 1048576).toFixed(1) + ' MB';
+
+        // Also trigger native browser/iOS file download prompt so it appears in the device's Files/Downloads folder
+        try {
+          const blobUrl = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.style.display = 'none';
+          a.href = blobUrl;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          setTimeout(() => {
+            document.body.removeChild(a);
+            URL.revokeObjectURL(blobUrl);
+          }, 4000);
+        } catch (e) {
+          console.warn('Native browser file download trigger notice:', e);
+        }
       }
       task.percent = 85;
       this.notify();

@@ -133,7 +133,7 @@ class SpotifyClient {
         duration_str: `${mins}:${secs.toString().padStart(2, '0')}`,
         cover_url: t.thumbnail || coverUrl,
         preview_url: preview,
-        audio_url: preview,
+        audio_url: undefined,
         format: 'MP3'
       };
     });
@@ -182,8 +182,8 @@ class SpotifyClient {
       duration_str: `${Math.floor(duration / 60000)}:${Math.floor((duration % 60000) / 1000).toString().padStart(2, '0')}`,
       cover_url: item.album?.images?.[0]?.url || fallbackCover,
       preview_url: item.preview_url || null,
-      audio_url: item.preview_url || undefined,
-      format: item.preview_url ? 'Preview Spotify' : 'Pendiente de resolver',
+      audio_url: undefined,
+      format: 'Audio Completo',
       externalUrl: item.external_urls?.spotify,
       isrc: item.external_ids?.isrc
     };
@@ -437,7 +437,7 @@ class SpotifyClient {
             duration_str: `${mins}:${secs.toString().padStart(2, '0')}`,
             cover_url: cover,
             preview_url: item.previewUrl || null,
-            audio_url: item.previewUrl || null,
+            audio_url: undefined,
             format: 'MP3'
           };
         });

@@ -22,6 +22,11 @@ export async function resolveNativeAudio(
   artist: string,
   durationMs?: number
 ): Promise<NativeResolvedAudio | null> {
-  if (!Capacitor.isNativePlatform()) return null;
-  return NativeAudioResolver.resolve({ title, artist, durationMs });
+  if (!Capacitor.isNativePlatform() || Capacitor.getPlatform() !== 'android') return null;
+  try {
+    return await NativeAudioResolver.resolve({ title, artist, durationMs });
+  } catch (err) {
+    console.warn('NativeAudioResolver notice (falling back to stream resolver):', err);
+    return null;
+  }
 }

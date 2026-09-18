@@ -96,8 +96,7 @@ class LicenseClient {
     
     const shouldCheckOnline = forceRemote || 
       !this.verifiedAt || 
-      (Date.now() - this.verifiedAt > 15000) || 
-      current.status === 'revoked';
+      (Date.now() - this.verifiedAt > 15000);
 
     if (!shouldCheckOnline) {
       return current;

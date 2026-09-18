@@ -224,8 +224,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // 4. Audio Engine Event Listeners
+  let lastErrorAlertTime = 0;
   audioEngine.on('error', (error: any) => {
-    void appDialog.alert(error?.message || 'No se pudo reproducir este audio. Comprueba la conexión o intenta otra canción.');
+    if (audioEngine.isPlaying) return;
+    const now = Date.now();
+    if (now - lastErrorAlertTime < 3000) return;
+    lastErrorAlertTime = now;
+    const msg = error?.message || String(error || '');
+    if (/abort|interrupted|gesture|cancel|user/i.test(msg)) return;
+    void appDialog.alert(msg || 'No se pudo reproducir este audio. Comprueba la conexión o intenta otra canción.');
   });
 
   audioEngine.on('play', () => {

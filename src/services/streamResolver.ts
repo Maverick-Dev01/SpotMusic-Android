@@ -168,10 +168,19 @@ class StreamResolver {
 
     const firstArtist = (artist || '').split(/[,&/]/)[0].trim();
     const artistScore = this.similarity(firstArtist, candidate.artist || '');
+    const firstArtistNorm = this.normalize(firstArtist);
+    const candArtistNorm = this.normalize(candidate.artist || '');
+    const candTitleNorm = this.normalize(candidate.title || '');
+    const artMatches = artistScore >= 0.20 || candArtistNorm.includes(firstArtistNorm) || candTitleNorm.includes(firstArtistNorm);
+    if (!artMatches) return 0;
+
+    const cleanTNorm = this.normalize(this.cleanTitle(title));
+    const titleMatches = titleScore >= 0.40 || candTitleNorm.includes(cleanTNorm) || cleanTNorm.includes(candTitleNorm);
+    if (!titleMatches) return 0;
+
     const durationScore = durationMs && candidate.durationMs
       ? Math.max(0, 1 - Math.abs(durationMs - candidate.durationMs) / Math.max(durationMs, 1))
       : 0.8;
-    if (titleScore < 0.60 || (artistScore < 0.25 && !this.normalize(candidate.artist || '').includes(this.normalize(firstArtist)))) return 0;
     return titleScore * 0.50 + artistScore * 0.30 + durationScore * 0.20;
   }
 
@@ -185,7 +194,7 @@ class StreamResolver {
       .map(candidate => ({ candidate, score: this.matchScore(title, artist, durationMs, candidate) }))
       .sort((a, b) => b.score - a.score);
     const best = ranked[0];
-    if (!best || best.score < 0.60) return null;
+    if (!best || best.score < 0.45) return null;
     return { ...best.candidate, matchScore: best.score };
   }
 
