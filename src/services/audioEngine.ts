@@ -32,8 +32,8 @@ class AudioEngine {
   private compressor: DynamicsCompressorNode | null = null;
   private analyser: AnalyserNode | null = null;
 
-  // Native background audio state
-  private isNative: boolean = typeof Capacitor !== 'undefined' && typeof Capacitor.isNativePlatform === 'function' && Capacitor.isNativePlatform();
+  // Native background audio state (Android only - iOS uses WKWebView HTML5 audio with UIBackgroundModes)
+  private isNative: boolean = typeof Capacitor !== 'undefined' && typeof Capacitor.isNativePlatform === 'function' && Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android';
   private nativeIsPlaying: boolean = false;
   private nativeCurrentTime: number = 0;
   private nativeDuration: number = 0;
@@ -62,6 +62,8 @@ class AudioEngine {
     this.audio = new Audio();
     this.audio.preload = 'auto';
     this.audio.volume = 1.0;
+    this.audio.setAttribute('playsinline', 'true');
+    this.audio.setAttribute('webkit-playsinline', 'true');
     this.restoreEqualizer();
     this.setupAudioListeners();
     if (this.isNative) {
@@ -286,6 +288,21 @@ class AudioEngine {
   public async playIndex(index: number) {
     if (index < 0 || index >= this.queue.length) return;
     const request = ++this.playRequest;
+
+    // Synchronously prime/unlock HTMLAudioElement on iOS Safari / WebKit during user click tick
+    if (!this.isNative) {
+      try {
+        if (this.audioCtx && this.audioCtx.state === 'suspended') {
+          void this.audioCtx.resume();
+        }
+        if (!this.audio.src) {
+          this.audio.src = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
+          const p = this.audio.play();
+          if (p) p.then(() => this.audio.pause()).catch(() => {});
+        }
+      } catch {}
+    }
+
     this.audio.pause();
     this.currentIndex = index;
     const track = this.queue[index];
@@ -384,25 +401,17 @@ class AudioEngine {
     this.audio.pause();
     if (this.objectUrl) URL.revokeObjectURL(this.objectUrl);
     this.objectUrl = newObjectUrl;
-    // Web Audio requires a readable same-origin source. Keep remote streams on direct output.
+
+    this.audio.crossOrigin = 'anonymous';
+    this.audio.setAttribute('playsinline', 'true');
+    this.audio.setAttribute('webkit-playsinline', 'true');
+    this.audio.src = audioUrl;
+
     const localAudio = audioUrl.startsWith('blob:') || audioUrl.startsWith('data:') ||
       (track.isLocal && new URL(audioUrl, location.href).origin === location.origin);
-    if (!localAudio && this.audioCtx) {
-      this.audio.removeAttribute('src');
-      this.audio.load();
-      void this.audioCtx.close();
-      this.audioCtx = null;
-      this.eqFilters = [];
-      this.bassBoostNode = null;
-      this.masterGain = null;
-      this.compressor = null;
-      this.analyser = null;
-      this.audio = new Audio();
-      this.audio.preload = 'auto';
-      this.setupAudioListeners();
+    if (localAudio) {
+      this.initAudioContext();
     }
-    this.audio.src = audioUrl;
-    if (localAudio) this.initAudioContext();
     this.emit('eqavailability', this.equalizerAvailable);
     this.audio.load();
     this.audio.volume = 1.0;

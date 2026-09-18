@@ -286,12 +286,28 @@ body.has-notch #folder-modal-overlay {
 .transport-controls button, .quick-actions button { flex-shrink: 0; }
 .bottom-nav {
   overflow: hidden;
-  padding-bottom: max(calc(var(--sab, 0px) + 8px), env(safe-area-inset-bottom, 0px), 12px);
+  padding-top: 8px;
+  padding-bottom: max(calc(var(--sab, 0px) + 12px), env(safe-area-inset-bottom, 0px), 16px) !important;
 }
 
 body.is-ios .bottom-nav,
 body.has-notch .bottom-nav {
-  padding-bottom: max(calc(var(--sab, 24px) + 6px), 26px) !important;
+  padding-top: 10px;
+  padding-bottom: max(calc(var(--sab, 34px) + 14px), 44px) !important;
+}
+
+body.is-ios #mini-player-bar,
+body.has-notch #mini-player-bar {
+  margin-bottom: 12px;
+}
+
+.player-view {
+  padding-bottom: max(calc(var(--sab, 0px) + 16px), 24px);
+}
+
+body.is-ios .player-view,
+body.has-notch .player-view {
+  padding-bottom: max(calc(var(--sab, 34px) + 16px), 42px);
 }
 
 .bottom-nav > div { width: 100%; min-width: 0; }

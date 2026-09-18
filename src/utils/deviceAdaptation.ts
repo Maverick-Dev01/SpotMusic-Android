@@ -43,12 +43,12 @@ export function setupSafeAreaAndDeviceAdaptation() {
     // iPhone 14 Pro/15/16 Dynamic Island is ~54px; iPhone 13 Pro Max notch is ~47px
     const minNotchTop = (screenH >= 932 || screenH === 852) ? 54 : 48;
     sat = Math.max(envTop, minNotchTop);
-    sab = Math.max(envBottom, 24);
+    sab = Math.max(envBottom, 34);
   } else if (isIOS) {
     // iPad or older iPhone (SE/8)
     document.body.classList.remove('has-notch');
     sat = Math.max(envTop, 20);
-    sab = Math.max(envBottom, 10);
+    sab = Math.max(envBottom, 16);
   } else {
     // Android:
     // For notchless devices (like ZTE Nubia Z60 Ultra with under-display camera), envTop is 0 or minimal (~14px)
