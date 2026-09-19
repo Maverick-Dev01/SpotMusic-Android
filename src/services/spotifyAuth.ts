@@ -7,7 +7,6 @@ type AuthListener = () => void;
 
 const REDIRECT_URI = 'spotmusic-login://callback';
 const DEFAULT_CLIENT_ID = 'e0e9be08cc8f4815a6b726ee648016f2';
-const DEFAULT_CLIENT_SECRET = 'fbed0d551e7e410181fe9bf80bb16dcc';
 const CLIENT_ID_KEY = 'spotmusic_spotify_client_id';
 const CLIENT_SECRET_KEY = 'spotmusic_spotify_client_secret';
 const ACCESS_TOKEN_KEY = 'spotmusic_spotify_access_token_v2';
@@ -28,13 +27,8 @@ class SpotifyAuth {
     return configured || String(buildEnv?.VITE_SPOTIFY_CLIENT_ID || '').trim() || DEFAULT_CLIENT_ID;
   }
 
-  public get clientSecret(): string {
-    const configured = localStorage.getItem(CLIENT_SECRET_KEY)?.trim() || '';
-    const buildEnv = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env;
-    return configured || String(buildEnv?.VITE_SPOTIFY_CLIENT_SECRET || '').trim() || DEFAULT_CLIENT_SECRET;
-  }
 
-  public get configured() { return !!this.clientId && !!this.clientSecret; }
+  public get configured() { return !!this.clientId; }
   public get connected() { return spotifyClient.hasAccessToken; }
   public get redirectUri() { return REDIRECT_URI; }
 
@@ -61,6 +55,8 @@ class SpotifyAuth {
   public async initialize() {
     if (this.initialized) return;
     this.initialized = true;
+    [CLIENT_SECRET_KEY, APP_TOKEN_KEY, APP_TOKEN_EXPIRES_KEY].forEach(key => localStorage.removeItem(key));
+    spotifyClient.setAccessToken('');
     await App.addListener('appUrlOpen', ({ url }) => {
       if (url?.startsWith(REDIRECT_URI)) void this.handleCallback(url);
     });
@@ -76,12 +72,6 @@ class SpotifyAuth {
       try { await this.refreshAccessToken(); return; } catch { this.disconnect(false); }
     }
 
-    // Auto-authenticate with baked-in client credentials
-    try {
-      await this.ensureAppToken();
-    } catch (e) {
-      console.warn('Could not obtain Spotify App Token on init:', e);
-    }
   }
 
   public async ensureAccessToken(): Promise<boolean> {
@@ -95,51 +85,7 @@ class SpotifyAuth {
         this.disconnect(false);
       }
     }
-    // Fallback to baked-in application token
-    try {
-      const appToken = await this.ensureAppToken();
-      return !!appToken;
-    } catch {
-      return false;
-    }
-  }
-
-  public async ensureAppToken(): Promise<string> {
-    const cachedToken = localStorage.getItem(APP_TOKEN_KEY) || '';
-    const expiresAt = Number(localStorage.getItem(APP_TOKEN_EXPIRES_KEY) || 0);
-    if (cachedToken && expiresAt > Date.now() + 60_000) {
-      if (!spotifyClient.hasAccessToken) spotifyClient.setAccessToken(cachedToken);
-      return cachedToken;
-    }
-
-    const cid = this.clientId;
-    const csec = this.clientSecret;
-    if (!cid || !csec) return '';
-
-    const authHeader = btoa(`${cid}:${csec}`);
-    const res = await CapacitorHttp.request({
-      method: 'POST',
-      url: 'https://accounts.spotify.com/api/token',
-      headers: {
-        'Authorization': `Basic ${authHeader}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Accept': 'application/json'
-      },
-      data: 'grant_type=client_credentials',
-      connectTimeout: 15000,
-      readTimeout: 20000
-    });
-
-    const data = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
-    if (data?.access_token) {
-      localStorage.setItem(APP_TOKEN_KEY, data.access_token);
-      localStorage.setItem(APP_TOKEN_EXPIRES_KEY, String(Date.now() + ((Number(data.expires_in) || 3600) * 1000)));
-      if (!localStorage.getItem(ACCESS_TOKEN_KEY)) {
-        spotifyClient.setAccessToken(data.access_token);
-      }
-      return data.access_token;
-    }
-    return '';
+    return false;
   }
 
   public async connect() {

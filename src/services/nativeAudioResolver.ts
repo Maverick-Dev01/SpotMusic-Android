@@ -13,9 +13,14 @@ export interface NativeResolvedAudio {
 
 interface NativeAudioResolverPlugin {
   resolve(options: { title: string; artist: string; durationMs?: number }): Promise<NativeResolvedAudio>;
+  validateFile(options: { uri: string; durationMs: number }): Promise<void>;
 }
 
 const NativeAudioResolver = registerPlugin<NativeAudioResolverPlugin>('NativeAudioResolver');
+
+export async function validateNativeFile(uri: string, durationMs: number): Promise<void> {
+  if (Capacitor.getPlatform() === 'android') await NativeAudioResolver.validateFile({ uri, durationMs });
+}
 
 export async function resolveNativeAudio(
   title: string,

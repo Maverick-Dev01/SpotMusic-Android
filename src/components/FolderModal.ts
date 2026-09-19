@@ -41,6 +41,7 @@ export class FolderModal {
       </div>
     `;
 
+    this.overlay.style.zIndex = '60';
     document.body.appendChild(this.overlay);
     this.setupEvents();
   }

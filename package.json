@@ -1,6 +1,6 @@
 {
   "name": "spotmusic-android",
-  "version": "1.0.20",
+  "version": "1.0.21",
   "type": "module",
   "private": true,
   "description": "SpotMusic Mobile - Reproductor de Música Avanzado y Descargador para Android",
@@ -32,6 +32,7 @@
     "@capacitor/cli": "^6.2.0",
     "@types/crypto-js": "^4.2.2",
     "autoprefixer": "^10.4.20",
+    "fake-indexeddb": "^6.2.5",
     "postcss": "^8.5.1",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.3",

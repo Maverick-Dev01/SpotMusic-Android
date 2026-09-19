@@ -1,5 +1,6 @@
 import { CapacitorHttp } from '@capacitor/core';
 import { Track, Playlist } from '../types';
+import { rankSearchResults } from './searchRanking';
 
 export interface SearchResults {
   tracks: Track[];
@@ -145,9 +146,9 @@ class SpotifyClient {
       description: entity.subtitle || entity.description || '',
       cover_url: coverUrl,
       owner: (entity.authors && entity.authors[0]?.name) || 'Spotify',
-      total_tracks: tracks.length,
+      total_tracks: Number(entity.totalTracks ?? entity.tracks?.total ?? entity.trackCount) || tracks.length,
       tracks,
-      partial: false
+      partial: info.type !== 'track'
     };
   }
 
@@ -214,14 +215,16 @@ class SpotifyClient {
         ? `/playlists/${info.id}/items?limit=${limit}&offset=${offset}&additional_types=track`
         : `/albums/${info.id}/tracks?limit=${limit}&offset=${offset}`;
       const page = await this.spotifyApi(endpoint);
+      if (!Array.isArray(page.items)) throw new Error('Spotify devolvió una página de canciones inválida. Intenta importar de nuevo.');
       total = Number(page.total ?? total);
       for (const raw of page.items || []) {
         const track = this.mapOfficialTrack(raw, cover, entity.name || 'Spotify');
         if (track) tracks.push(track);
       }
       offset += page.items?.length || 0;
-      if (!page.next || !page.items?.length) break;
-    } while (offset < total);
+      if (!page.next) break;
+      if (!page.items.length) throw new Error('Spotify interrumpió la importación antes de terminar. Intenta nuevamente.');
+    } while (true);
 
     return {
       id: info.id,
@@ -307,7 +310,8 @@ class SpotifyClient {
     }
 
     // 1. Try Spotify Web API
-    const token = this.accessToken || localStorage.getItem('spotmusic_spotify_app_token') || localStorage.getItem('spotmusic_spotify_access_token_v2');
+    let spotifyResults: SearchResults | undefined;
+    const token = this.accessToken;
     if (token) {
       try {
         const encoded = encodeURIComponent(q);
@@ -353,9 +357,12 @@ class SpotifyClient {
             trackCount: a.total_tracks || 1
           }));
 
-          const results: SearchResults = { tracks, albums, playlists: [] };
-          this.searchCache.set(cacheKey, { timestamp: Date.now(), data: results });
-          return results;
+          const results: SearchResults = { tracks: rankSearchResults(q, tracks), albums, playlists: [] };
+          if (tracks.length >= 10) {
+            this.searchCache.set(cacheKey, { timestamp: Date.now(), data: results });
+            return results;
+          }
+          spotifyResults = results;
         }
       } catch (spErr) {
         console.warn('Spotify search notice, using iTunes fallback:', spErr);
@@ -403,15 +410,17 @@ class SpotifyClient {
       });
 
       const itunesResults: SearchResults = {
-        tracks,
+        tracks: [...(spotifyResults?.tracks || []), ...tracks].filter((track, index, all) =>
+          all.findIndex(other => `${other.name}|${other.artists}`.toLocaleLowerCase() === `${track.name}|${track.artists}`.toLocaleLowerCase()) === index),
         albums: Array.from(albumMap.values()).slice(0, 10),
         playlists: []
       };
       this.searchCache.set(cacheKey, { timestamp: Date.now(), data: itunesResults });
+      itunesResults.tracks = rankSearchResults(q, itunesResults.tracks);
       return itunesResults;
     } catch (err: any) {
       console.error('Catalog search error:', err);
-      return { tracks: [], albums: [], playlists: [] };
+      return spotifyResults || { tracks: [], albums: [], playlists: [] };
     }
   }
 

@@ -81,14 +81,38 @@ class LocalLibrary {
   }
 
   public async deleteTrack(id: string): Promise<void> {
+    return this.deleteTracks([id]);
+  }
+
+  public async deleteTracks(ids: string[]): Promise<void> {
     const db = await this.getDB();
-    await this.deleteAudioBlob(id);
+    const selected = new Set(ids);
     return new Promise((resolve, reject) => {
-      const tx = db.transaction('tracks', 'readwrite');
-      const store = tx.objectStore('tracks');
-      store.delete(id);
+      const tx = db.transaction(['tracks', 'audio_blobs', 'history', 'playlists'], 'readwrite');
+      for (const id of selected) {
+        tx.objectStore('tracks').delete(id);
+        tx.objectStore('audio_blobs').delete(id);
+      }
+      const history = tx.objectStore('history').openCursor();
+      history.onsuccess = () => {
+        const cursor = history.result;
+        if (!cursor) return;
+        if (selected.has(cursor.value.track?.id)) cursor.delete();
+        cursor.continue();
+      };
+      const playlists = tx.objectStore('playlists').openCursor();
+      playlists.onsuccess = () => {
+        const cursor = playlists.result;
+        if (!cursor) return;
+        const playlist = cursor.value;
+        playlist.tracks = playlist.tracks.filter((track: Track) => !selected.has(track.id));
+        playlist.trackCount = playlist.tracks.length;
+        cursor.update(playlist);
+        cursor.continue();
+      };
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error || new Error('No se pudieron eliminar las canciones.'));
     });
   }
 

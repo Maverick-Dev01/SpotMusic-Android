@@ -146,7 +146,26 @@ class AudioEngine {
     }
   }
 
+  private rejectedDuration = false;
+  private durationCheckEnabled = false;
+
+  private checkActualDuration(seconds: number): boolean {
+    const track = this.currentTrack;
+    if (!this.durationCheckEnabled) return true;
+    if (this.rejectedDuration) return false;
+    if (track && track.duration_ms > 45000 && seconds > 0 && seconds * 1000 < track.duration_ms * .8) {
+      this.rejectedDuration = true;
+      this.pause();
+      track.audio_url = undefined;
+      streamResolver.clearCache();
+      this.emit('error', new Error('El proveedor entregó un fragmento de la canción. No se reproducirá como audio completo.'));
+      return false;
+    }
+    return true;
+  }
+
   private setupAudioListeners() {
+    this.audio.addEventListener('loadedmetadata', () => this.checkActualDuration(this.audio.duration));
     this.audio.addEventListener('play', () => {
       this.emit('play', this.currentTrack);
       this.updateMediaSessionState('playing');
@@ -212,6 +231,7 @@ class AudioEngine {
     });
 
     BackgroundAudio.addListener('onTimeUpdate', (data) => {
+      if (!this.checkActualDuration(data.duration)) return;
       this.nativeCurrentTime = data.currentTime;
       if (data.duration > 0) this.nativeDuration = data.duration;
       const dur = this.nativeDuration || (this.currentTrack?.duration_ms ? this.currentTrack.duration_ms / 1000 : 0);
@@ -288,6 +308,7 @@ class AudioEngine {
   public async playIndex(index: number) {
     if (index < 0 || index >= this.queue.length) return;
     const request = ++this.playRequest;
+    this.durationCheckEnabled = false;
 
     // Synchronously prime/unlock HTMLAudioElement on iOS Safari / WebKit during user click tick
     // Keep silent audio playing so iOS WebKit preserves the user-gesture token across async resolution
@@ -303,6 +324,7 @@ class AudioEngine {
     }
 
     this.currentIndex = index;
+    this.rejectedDuration = false;
     const track = this.queue[index];
 
     let audioUrl = track.audio_url;
@@ -323,7 +345,7 @@ class AudioEngine {
     }
 
     // 2. Resolve full audio stream if missing or if it is a 30s preview
-    const isPreview = !audioUrl || audioUrl.includes('apple.com') || audioUrl.includes('mzstatic') || audioUrl.includes('preview') || track.duration_ms === 30000;
+    const isPreview = !track.isLocal;
     let resolutionError: unknown;
     if (isPreview && !track.isLocal) {
       audioUrl = undefined;
@@ -375,6 +397,7 @@ class AudioEngine {
           durationMs: track.duration_ms || 0,
           positionMs: 0
         });
+        this.durationCheckEnabled = true;
         if (request !== this.playRequest) return;
         this.nativeIsPlaying = true;
         this.nativeCurrentTime = 0;
@@ -409,6 +432,7 @@ class AudioEngine {
 
     this.audio.setAttribute('playsinline', 'true');
     this.audio.setAttribute('webkit-playsinline', 'true');
+    this.durationCheckEnabled = true;
     this.audio.src = audioUrl;
     this.emit('eqavailability', this.equalizerAvailable);
     this.audio.load();

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
+import { indexedDB } from 'fake-indexeddb';
 function load(file, dependencies = {}, globals = {}) {
   const exports = {};
   const code = ts.transpileModule(readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
@@ -81,7 +82,9 @@ function audio(resolver) {
 }
 test('rapid track changes ignore an older asynchronous resolution', async () => {
   let complete;
-  const engine = audio(() => new Promise(resolve => { complete = resolve; }));
+  const engine = audio(title => title === 'B'
+    ? Promise.resolve({ audioUrl: 'https://audio.example/b.mp3', durationMs: 180000 })
+    : new Promise(resolve => { complete = resolve; }));
   const first = { id: 'a', name: 'A', artists: 'Artist', duration_ms: 30000 };
   const second = { id: 'b', name: 'B', artists: 'Artist', duration_ms: 180000, audio_url: 'https://audio.example/b.mp3' };
   const events = [];
@@ -161,7 +164,7 @@ test('audio matching rejects an unrelated track and prefers the exact title and 
 
 test('official Spotify import follows every playlist page', async () => {
   const calls = [];
-  const items = Array.from({ length: 120 }, (_, index) => ({
+  const items = Array.from({ length: 1000 }, (_, index) => ({
     item: {
       id: `track-${index}`,
       type: 'track',
@@ -177,18 +180,67 @@ test('official Spotify import follows every playlist page', async () => {
     '@capacitor/core': { CapacitorHttp: { get: async ({ url }) => {
       calls.push(url);
       if (url.endsWith('/playlists/1234567890123456789012')) {
-        return { status: 200, data: { name: 'Large list', description: '', images: [], owner: { display_name: 'Owner' }, tracks: { total: 120 } } };
+        return { status: 200, data: { name: 'Large list', description: '', images: [], owner: { display_name: 'Owner' } } };
       }
       const offset = Number(new URL(url).searchParams.get('offset') || 0);
       const page = items.slice(offset, offset + 50);
-      return { status: 200, data: { total: 120, items: page, next: offset + page.length < 120 ? 'next' : null } };
+      return { status: 200, data: { items: page, next: offset + page.length < 1000 ? 'next' : null } };
     } } }
   }, {
     sessionStorage: { getItem: () => null, setItem() {}, removeItem() {} }
   });
   spotifyClient.setAccessToken('test-token');
   const result = await spotifyClient.fetchSpotifyEntity('https://open.spotify.com/playlist/1234567890123456789012');
-  assert.equal(result.tracks.length, 120);
+  assert.equal(result.tracks.length, 1000);
   assert.equal(result.partial, false);
-  assert.deepEqual(calls.filter(url => url.includes('/items?')).map(url => new URL(url).searchParams.get('offset')), ['0', '50', '100']);
+  assert.deepEqual(calls.filter(url => url.includes('/items?')).map(url => Number(new URL(url).searchParams.get('offset'))), Array.from({ length: 20 }, (_, i) => i * 50));
+});
+
+test('bulk deletion removes selected songs, blobs, history and folder references atomically', async () => {
+  const { localLibrary } = load('src/services/localLibrary.ts', {}, { indexedDB });
+  const a = { id: 'bulk-a', name: 'A' }, b = { id: 'bulk-b', name: 'B' };
+  await localLibrary.saveTrack(a);
+  await localLibrary.saveTrack(b);
+  await localLibrary.logHistory(a);
+  await localLibrary.logHistory(b);
+  await localLibrary.saveAudioBlob(a.id, new Blob(['test']));
+  const folder = await localLibrary.createPlaylist('Folder');
+  await localLibrary.addTracksToPlaylist(folder.id, [a, b]);
+  await localLibrary.deleteTracks([a.id]);
+  assert.deepEqual(Array.from(await localLibrary.getAllTracks(), t => t.id), [b.id]);
+  assert.deepEqual(Array.from(await localLibrary.getRecentHistory(), t => t.id), [b.id]);
+  assert.equal(await localLibrary.getAudioBlob(a.id), null);
+  const saved = (await localLibrary.getAllPlaylists())[0];
+  assert.equal(saved.trackCount, 1);
+  assert.equal(saved.tracks[0].id, b.id);
+});
+
+test('full audio validation rejects preview URLs and short provider responses', () => {
+  const { isFullAudio } = load('src/services/audioValidation.ts');
+  assert.equal(isFullAudio({ audioUrl: 'https://cdn.example/full.mp3', durationMs: 30000 }, 180000), false);
+  assert.equal(isFullAudio({ audioUrl: 'https://cdn.example/preview.mp3', durationMs: 180000 }, 180000), false);
+  assert.equal(isFullAudio({ audioUrl: 'https://cdn.example/full.mp3', durationMs: 180000 }, 180000), true);
+  assert.equal(isFullAudio({ audioUrl: 'https://cdn.example/short-song.mp3', durationMs: 40000 }, 40000), true);
+});
+
+test('search ranks the exact title and artist ahead of covers with similar names', () => {
+  const { rankSearchResults } = load('src/services/searchRanking.ts');
+  const tracks = rankSearchResults('Sneaky Snitch Kevin MacLeod', [
+    { name: 'Sneaky Snitch (feat. Kevin Macleod)', artists: 'Retromelon' },
+    { name: 'Sneaky Snitch', artists: 'Kevin MacLeod' },
+    { name: 'Sneaky Adventure', artists: 'Kevin MacLeod' }
+  ]);
+  assert.equal(tracks[0].artists, 'Kevin MacLeod');
+  assert.equal(tracks[0].name, 'Sneaky Snitch');
+});
+
+test('actual playback duration catches a preview disguised as a full-song URL', async () => {
+  const engine = audio(async () => ({ audioUrl: 'https://cdn.example/full.mp3', durationMs: 180000 }));
+  let failure;
+  engine.on('error', error => { failure = error; });
+  await engine.playTrack({ id: 'disguised', name: 'Song', artists: 'Artist', duration_ms: 180000 });
+  engine.audio.duration = 30;
+  engine.audio.listeners.get('loadedmetadata')();
+  assert.equal(engine.isPlaying, false);
+  assert.match(failure.message, /fragmento/);
 });

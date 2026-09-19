@@ -27,7 +27,7 @@
         <h1 class="text-base font-extrabold tracking-tight text-white flex items-center gap-1.5">
           <span>SpotMusic</span>
           <button id="btn-header-reload" class="text-[9px] px-1.5 py-0.5 rounded bg-sonic-green/20 text-sonic-green font-mono uppercase tracking-wider font-semibold flex items-center gap-1 hover:bg-sonic-green/30 active:scale-95 transition-all" title="Toca para forzar recarga y limpiar caché">
-            <span id="app-ver-badge">v1.0.20</span>
+            <span id="app-ver-badge">v1.0.21</span>
             <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l6.73-6.19"/></svg>
           </button>
         </h1>
@@ -163,10 +163,11 @@
         </button>
         <button class="btn-lib-filter px-3.5 py-1.5 rounded-full text-xs font-medium bg-white/5 text-white/70 border border-white/10" data-tab="favs">Favoritas (❤️)</button>
         <button class="btn-lib-filter px-3.5 py-1.5 rounded-full text-xs font-medium bg-white/5 text-white/70 border border-white/10" data-tab="recent">Historial</button>
+        <button class="btn-lib-filter px-3.5 py-1.5 rounded-full text-xs font-medium bg-white/5 text-white/70 border border-white/10" data-tab="downloaded">Descargadas</button>
       </div>
 
       <!-- Selection & Folder Action Bar -->
-      <div id="lib-selection-bar" class="flex items-center justify-between p-2 rounded-2xl bg-white/5 border border-white/10 mb-2 flex-shrink-0">
+      <div id="lib-selection-bar" class="flex flex-wrap gap-2 items-center justify-between p-2 rounded-2xl bg-white/5 border border-white/10 mb-2 flex-shrink-0">
         <div class="flex items-center gap-2">
           <button id="btn-toggle-select-mode" class="px-2.5 py-1 rounded-xl bg-white/10 hover:bg-white/15 text-white/80 text-xs font-semibold flex items-center gap-1.5 active:scale-95 transition-all">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
@@ -174,11 +175,13 @@
           </button>
           <span id="selected-tracks-count" class="text-xs text-sonic-green font-semibold hidden">0 seleccionadas</span>
         </div>
-        <div id="lib-actions-container" class="flex items-center gap-1.5 hidden">
+        <div id="lib-actions-container" class="flex flex-wrap items-center gap-1.5 hidden">
+          <button id="btn-delete-selected-lib" class="px-2 py-2 rounded-xl bg-red-500/10 text-red-400 text-xs font-medium">Eliminar</button>
+          <button id="btn-delete-files-lib" class="px-2 py-2 rounded-xl bg-red-500/10 text-red-400 text-xs font-medium">Borrar archivos</button>
           <button id="btn-select-all-lib" class="px-2 py-1 rounded-xl bg-white/10 text-white/70 text-xs font-medium active:scale-95">Todas</button>
           <button id="btn-move-to-folder" class="px-3 py-1 rounded-xl bg-sonic-green text-black text-xs font-bold active:scale-95 transition-all shadow-md shadow-green-500/20 flex items-center gap-1">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-            <span>Mover a Carpeta</span>
+            <span>Añadir a carpeta</span>
           </button>
         </div>
       </div>

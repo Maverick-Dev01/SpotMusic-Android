@@ -1,6 +1,7 @@
 import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import CryptoJS from 'crypto-js';
 import { resolveNativeAudio } from './nativeAudioResolver';
+import { isFullAudio } from './audioValidation';
 
 export interface ResolvedAudio {
   audioUrl: string;
@@ -124,11 +125,7 @@ class StreamResolver {
   }
 
   private cleanTitle(title: string): string {
-    return title
-      .replace(/\s*-\s*(Remaster(ed)?\s*\d*|Live|Radio Edit|Acoustic|Single Version|Bonus Track|Deluxe).*$/i, '')
-      .replace(/\s*\((feat\.|ft\.|with\b|remaster(ed)?|live|radio edit|acoustic|version|mono|stereo).*?\)/gi, '')
-      .replace(/\s*\[(feat\.|ft\.|with\b|remaster(ed)?|live|radio edit|acoustic|version|mono|stereo).*?\]/gi, '')
-      .trim();
+    return title.trim();
   }
 
   private normalize(value: string): string {
@@ -137,7 +134,7 @@ class StreamResolver {
       .replace(/[\u0300-\u036f]/g, '')
       .toLowerCase()
       .replace(/&/g, ' and ')
-      .replace(/\b(feat|ft|official|audio|video|lyrics?|remaster(?:ed)?|version)\b.*$/g, '')
+      .replace(/\b(official|audio|video|lyrics?)\b/g, '')
       .replace(/[^a-z0-9]+/g, ' ')
       .trim();
   }
@@ -161,7 +158,8 @@ class StreamResolver {
     const titleLower = title.toLowerCase();
     const candLower = (candidate.title || '').toLowerCase();
     for (const word of unwanted) {
-      if (!titleLower.includes(word) && candLower.includes(word)) {
+      const pattern = new RegExp(`\\b${word}\\b`, 'i');
+      if (pattern.test(titleLower) !== pattern.test(candLower)) {
         return 0;
       }
     }
@@ -194,7 +192,7 @@ class StreamResolver {
       .map(candidate => ({ candidate, score: this.matchScore(title, artist, durationMs, candidate) }))
       .sort((a, b) => b.score - a.score);
     const best = ranked[0];
-    if (!best || best.score < 0.45) return null;
+    if (!best || best.score < 0.65) return null;
     return { ...best.candidate, matchScore: best.score };
   }
 
@@ -246,7 +244,7 @@ class StreamResolver {
         const candidates: Array<{ result: ResolvedAudio; endpoint: string }> = [];
         for (const track of data.collection) {
           const prog = track.media?.transcodings?.find((t: any) => t.format?.protocol === 'progressive');
-          if (prog) {
+          if (prog && track.policy !== 'SNIP' && !prog.snipped && (!prog.duration || prog.duration >= track.duration * 0.8)) {
             const durSec = Math.round((track.duration || 180000) / 1000);
             candidates.push({
               endpoint: `${prog.url}?client_id=${cId}`,
@@ -295,14 +293,14 @@ class StreamResolver {
           const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
           if (res.ok) data = await res.json();
         }
-        if (data && data.success && data.audioUrl) {
+        if (data && data.success && isFullAudio(data, expectedDurationMs) && data.title && data.artist) {
           const score = this.matchScore(title, artist, expectedDurationMs, {
             title: data.title || title,
             artist: data.artist || artist,
             durationMs: data.durationMs
           });
           // Strictly reject server response if match score is below 0.50 (e.g. wrong artist or wrong song)
-          if (score < 0.50 && (data.matchScore || 0) < 0.50) {
+          if (score < 0.65) {
             console.warn('Server stream candidate rejected due to mismatch:', data.title, data.artist, 'expected:', title, artist);
             continue;
           }
@@ -332,7 +330,14 @@ class StreamResolver {
       return this.cache.get(cacheKey)!;
     }
 
-    // 1. High-speed CORS server stream resolver (Instant, works 100% on iOS Web, PWA, Safari, and Capacitor)
+    // Android resolves through its installed extractor before consulting remote servers.
+    const nativeAudio = await resolveNativeAudio(title, artist, expectedDurationMs);
+    if (nativeAudio && isFullAudio(nativeAudio, expectedDurationMs)) {
+      this.cache.set(cacheKey, nativeAudio);
+      return nativeAudio;
+    }
+
+    // Remote resolution also supports iOS, where the Android extractor is unavailable.
     try {
       const serverStream = await this.resolveServerStream(cleanT, artist, expectedDurationMs);
       if (serverStream) {
@@ -350,7 +355,7 @@ class StreamResolver {
         this.resolveSoundCloud(cleanT, artist, expectedDurationMs).catch(() => null)
       ]);
 
-      const fullCandidates = [jioRes, scRes].filter((item): item is ResolvedAudio => !!item && item.durationMs > 60000);
+      const fullCandidates = [jioRes, scRes].filter((item): item is ResolvedAudio => !!item && isFullAudio(item, expectedDurationMs));
       const best = fullCandidates.sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0))[0];
       if (best) {
         this.cache.set(cacheKey, best);
@@ -361,11 +366,6 @@ class StreamResolver {
     }
 
     // 3. Match native yt-dlp runtime on Android if available
-    const native = await resolveNativeAudio(cleanT, artist, expectedDurationMs);
-    if (native) {
-      this.cache.set(cacheKey, native);
-      return native;
-    }
     return null;
   }
 }

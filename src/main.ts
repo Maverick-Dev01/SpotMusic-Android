@@ -6,6 +6,8 @@ import { localLibrary } from './services/localLibrary';
 import { licenseClient } from './services/licenseClient';
 import { downloadEngine } from './services/downloadEngine';
 import { Track } from './types';
+import { Filesystem } from '@capacitor/filesystem';
+import { storagePicker } from './services/storagePicker';
 
 // UI Components
 import { VinylDeck } from './components/VinylDeck';
@@ -343,7 +345,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   // 6. Library View Controller
-  let currentLibTab: 'all' | 'favs' | 'recent' = 'all';
+  let currentLibTab: 'all' | 'favs' | 'recent' | 'downloaded' = 'all';
   let isSelectMode = false;
   const selectedLibTrackIds = new Set<string>();
   const libTracksContainer = document.getElementById('library-tracks-container');
@@ -354,6 +356,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   const libActionsContainer = document.getElementById('lib-actions-container');
   const btnSelectAllLib = document.getElementById('btn-select-all-lib');
   const btnMoveToFolder = document.getElementById('btn-move-to-folder');
+  window.addEventListener('organize-tracks', ((event: CustomEvent<Track[]>) => {
+    folderModal.open(event.detail);
+  }) as EventListener);
 
   document.querySelectorAll('.btn-lib-filter').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -393,6 +398,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     let tracks: Track[] = [];
     if (currentLibTab === 'all') tracks = await localLibrary.getAllTracks();
     else if (currentLibTab === 'favs') tracks = await localLibrary.getFavorites();
+    else if (currentLibTab === 'downloaded') tracks = (await localLibrary.getAllTracks()).filter(track => track.isLocal);
     else tracks = await localLibrary.getRecentHistory(40);
 
     if (selectedLibTrackIds.size === tracks.length) {
@@ -408,7 +414,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (selectedLibTrackIds.size === 0) {
       return await appDialog.alert('Selecciona al menos una canción para mover a una carpeta.');
     }
-    const allTracks = await localLibrary.getAllTracks();
+    const allTracks = currentLibTab === 'recent' ? await localLibrary.getRecentHistory(40) : await localLibrary.getAllTracks();
     const selectedTracks = allTracks.filter(t => selectedLibTrackIds.has(t.id));
     folderModal.open(selectedTracks, () => {
       selectedLibTrackIds.clear();
@@ -416,6 +422,39 @@ document.addEventListener('DOMContentLoaded', async () => {
       updateSelectionUI();
       refreshLibraryView();
     });
+  });
+
+  document.getElementById('btn-delete-selected-lib')?.addEventListener('click', async () => {
+    if (!selectedLibTrackIds.size) return;
+    if (!await appDialog.confirm(`¿Eliminar ${selectedLibTrackIds.size} canciones de la biblioteca, carpetas e historial? Los archivos exportados al dispositivo se conservan.`)) return;
+    try {
+      await localLibrary.deleteTracks([...selectedLibTrackIds]);
+      selectedLibTrackIds.clear();
+      updateSelectionUI();
+      await refreshLibraryView();
+      await renderDownloadedTracks();
+    } catch {
+      await appDialog.alert('No se pudieron eliminar las canciones. Intenta de nuevo.');
+    }
+  });
+
+  document.getElementById('btn-delete-files-lib')?.addEventListener('click', async () => {
+    const tracks = (await localLibrary.getAllTracks()).filter(track => selectedLibTrackIds.has(track.id) && track.isLocal);
+    if (!tracks.length) return await appDialog.alert('Selecciona canciones descargadas para eliminar sus archivos.');
+    if (!await appDialog.confirm(`¿Eliminar permanentemente ${tracks.length} archivos descargados y quitarlos de la biblioteca? Esta acción no se puede deshacer.`)) return;
+    let failed = 0;
+    for (const track of tracks) {
+      try {
+        if (track.localPath?.startsWith('content://')) await storagePicker.deleteFile(track.localPath);
+        else if (track.localPath) await Filesystem.deleteFile({ path: track.localPath });
+        await localLibrary.deleteTrack(track.id);
+        selectedLibTrackIds.delete(track.id);
+      } catch { failed++; }
+    }
+    updateSelectionUI();
+    await refreshLibraryView();
+    await renderDownloadedTracks();
+    if (failed) await appDialog.alert(`${failed} archivos no pudieron eliminarse. Revisa el permiso de acceso a la carpeta.`);
   });
 
   document.getElementById('btn-scan-device-audio')?.addEventListener('click', async () => {
@@ -439,6 +478,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     let tracks: Track[] = [];
     if (currentLibTab === 'all') tracks = await localLibrary.getAllTracks();
     else if (currentLibTab === 'favs') tracks = await localLibrary.getFavorites();
+    else if (currentLibTab === 'downloaded') tracks = (await localLibrary.getAllTracks()).filter(track => track.isLocal);
     else tracks = await localLibrary.getRecentHistory(40);
 
     if (libTotalCount) libTotalCount.textContent = tracks.length.toString();

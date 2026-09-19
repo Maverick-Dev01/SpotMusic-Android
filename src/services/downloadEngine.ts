@@ -5,6 +5,8 @@ import { localLibrary } from './localLibrary';
 import { licenseClient } from './licenseClient';
 import { streamResolver } from './streamResolver';
 import { storagePicker } from './storagePicker';
+import { validateAudioBlob } from './audioValidation';
+import { validateNativeFile } from './nativeAudioResolver';
 
 type DownloadProgressCallback = (tasks: DownloadTask[]) => void;
 
@@ -253,7 +255,7 @@ class DownloadEngine {
     let url = track.audio_url;
 
     // Resolve full audio stream if missing or preview (NEVER download 30s previews)
-    const isPreview = !url || url.includes('apple.com') || url.includes('mzstatic') || url.includes('preview') || track.duration_ms === 30000;
+    const isPreview = !track.isLocal;
     if (isPreview) {
       task.percent = 15;
       this.notify();
@@ -266,8 +268,6 @@ class DownloadEngine {
           track.duration_str = resolved.durationStr;
           track.format = resolved.format;
           if (resolved.coverUrl) track.cover_url = resolved.coverUrl;
-        } else if (url && !url.includes('apple.com') && !url.includes('mzstatic')) {
-          // Keep existing url if it is not an iTunes preview
         } else {
           this.failTask(task, 'No se pudo resolver el audio para esta pista.', false);
           return;
@@ -286,7 +286,8 @@ class DownloadEngine {
     if (this.isCancelled(task)) return;
     const urlPath = url.split('?')[0].toLowerCase();
     const knownExtension = urlPath.match(/\.(m4a|mp3|webm|ogg|opus|aac)$/)?.[1];
-    const ext = knownExtension || (urlPath.includes('.mp4') ? 'm4a' : 'mp3');
+    const formatExtension = track.format?.match(/^(m4a|mp3|webm|ogg|opus|aac)\b/i)?.[1]?.toLowerCase();
+    const ext = knownExtension || formatExtension || (urlPath.includes('.mp4') ? 'm4a' : 'mp3');
     const filename = `${track.artists.slice(0, 60)} - ${track.name.slice(0, 80)} - ${track.id}.${ext}`.replace(/[\/\\?%*:|"<>]/g, '_');
     const relPath = `${this.downloadFolder}/${filename}`;
     let localPath = '';
@@ -322,6 +323,9 @@ class DownloadEngine {
           const stat = await Filesystem.stat({ path: relPath, directory: Directory.Documents });
           fileSize = stat.size;
         } else {
+          try {
+            await Filesystem.mkdir({ path: this.downloadFolder, directory: Directory.Documents, recursive: true });
+          } catch {}
           const result = await Filesystem.downloadFile({ url, path: relPath, directory: Directory.Documents, recursive: true });
           if (!result.path) throw new Error('No se pudo guardar el archivo en el dispositivo');
           localPath = result.path;
@@ -329,6 +333,13 @@ class DownloadEngine {
           fileSize = stat.size;
         }
         if (!fileSize) throw new Error('El archivo descargado está vacío');
+        try {
+          await validateNativeFile(localPath, track.duration_ms);
+        } catch (error) {
+          if (customDirectory.selected) await storagePicker.deleteFile(localPath);
+          else await Filesystem.deleteFile({ path: relPath, directory: Directory.Documents });
+          throw error;
+        }
         fileSizeStr = (fileSize / 1048576).toFixed(1) + ' MB';
         if (this.isCancelled(task)) {
           if (customDirectory.selected) await storagePicker.deleteFile(localPath);
@@ -366,6 +377,7 @@ class DownloadEngine {
         }
 
         if (this.isCancelled(task)) return;
+        await validateAudioBlob(blob, track.duration_ms);
         await localLibrary.saveAudioBlob(track.id, blob);
         fileSizeStr = (blob.size / 1048576).toFixed(1) + ' MB';
 

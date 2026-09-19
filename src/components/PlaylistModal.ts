@@ -65,6 +65,8 @@ export class PlaylistModal {
             <button id="btn-select-all-pl" class="px-2 py-2 rounded-xl bg-white/10 text-white/70 font-semibold text-[11px] leading-tight">Seleccionar todas</button>
             <button id="btn-download-selected-pl" class="px-2 py-2 rounded-xl bg-white/10 text-sonic-green font-semibold text-[11px] leading-tight">Descargar selección</button>
             <button id="btn-download-all-pl" class="px-2 py-2 rounded-xl bg-white/10 text-sonic-green font-semibold text-[11px] leading-tight">Descargar todas</button>
+            <button id="btn-folder-selected-pl" class="px-2 py-2 rounded-xl bg-white/10 text-white/70 font-semibold text-[11px] leading-tight">Añadir a carpeta</button>
+            <button id="btn-remove-selected-pl" class="px-2 py-2 rounded-xl bg-red-500/10 text-red-400 font-semibold text-[11px] leading-tight">Quitar selección</button>
           </div>
         </div>
         <div class="space-y-1.5" id="pl-tracks-container"></div>
@@ -76,6 +78,22 @@ export class PlaylistModal {
   }
 
   private setupEvents() {
+    document.getElementById('btn-folder-selected-pl')?.addEventListener('click', () => {
+      const tracks = this.currentPlaylist?.tracks.filter(track => this.selectedTrackIds.has(track.id)) || [];
+      if (tracks.length) window.dispatchEvent(new CustomEvent('organize-tracks', { detail: tracks }));
+    });
+    document.getElementById('btn-remove-selected-pl')?.addEventListener('click', async () => {
+      const playlist = this.currentPlaylist;
+      if (!playlist || !this.selectedTrackIds.size) return;
+      if (!await appDialog.confirm(`¿Quitar ${this.selectedTrackIds.size} canciones de esta playlist?`)) return;
+      try {
+        const updated = { ...playlist, tracks: playlist.tracks.filter(track => !this.selectedTrackIds.has(track.id)) };
+        await localLibrary.savePlaylist(updated);
+        this.openPlaylistDetail(updated);
+      } catch {
+        await appDialog.alert('No se pudo guardar la playlist. Intenta de nuevo.');
+      }
+    });
     document.getElementById('btn-close-pl-modal')?.addEventListener('click', () => this.close());
     document.getElementById('btn-back-to-pl-list')?.addEventListener('click', () => this.showList());
 
@@ -108,7 +126,9 @@ export class PlaylistModal {
         for (const t of sp.tracks) {
           await localLibrary.saveTrack(t);
         }
-        await appDialog.alert(`¡Playlist "${sp.name}" importada exitosamente con ${sp.tracks.length} canciones!`);
+        await appDialog.alert(sp.partial
+          ? `Se importó una vista parcial de "${sp.name}" (${sp.tracks.length} canciones). Vincula tu cuenta de Spotify en Ajustes y vuelve a importar para consultar todas las canciones accesibles.`
+          : `Playlist "${sp.name}" importada con ${sp.tracks.length} canciones.`);
         await this.renderList();
       } catch (err: any) {
         await appDialog.alert('Error al importar de Spotify: ' + (err.message || err));

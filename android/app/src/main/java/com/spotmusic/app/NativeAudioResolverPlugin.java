@@ -28,6 +28,27 @@ public class NativeAudioResolverPlugin extends Plugin {
     private static final int MAX_CACHE_FILES = 20;
 
     @PluginMethod
+    public void validateFile(PluginCall call) {
+        new Thread(() -> {
+            MediaMetadataRetriever retriever = new MediaMetadataRetriever();
+            try {
+                String uri = call.getString("uri", "");
+                retriever.setDataSource(getContext(), Uri.parse(uri));
+                String value = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
+                long actual = value == null ? 0 : Long.parseLong(value);
+                long expected = call.getLong("durationMs", 0L);
+                if (actual <= 0 || (expected > 45000 && actual < expected * .8)) {
+                    call.reject("El proveedor entregó un fragmento o un archivo incompleto.");
+                } else call.resolve();
+            } catch (Exception error) {
+                call.reject("No se pudo verificar el archivo de audio.", error);
+            } finally {
+                try { retriever.release(); } catch (Exception ignored) {}
+            }
+        }, "spotmusic-validate-audio").start();
+    }
+
+    @PluginMethod
     public void resolve(PluginCall call) {
         String title = cleanInput(call.getString("title"));
         String artist = cleanInput(call.getString("artist"));
@@ -56,7 +77,7 @@ public class NativeAudioResolverPlugin extends Plugin {
             throw new Exception("No se pudo preparar el almacenamiento temporal");
         }
 
-        String key = sha256((title + "\n" + artist).toLowerCase());
+        String key = sha256(("v21\n" + title + "\n" + artist + "\n" + expectedDurationMs).toLowerCase(Locale.ROOT));
         File audioFile = findCachedFile(directory, key);
         if (audioFile != null && audioFile.length() >= MIN_AUDIO_BYTES) {
             long actualDurationMs = readDuration(audioFile);
@@ -77,7 +98,7 @@ public class NativeAudioResolverPlugin extends Plugin {
         String query = title + " " + artist + " official audio";
         String outputTemplate = new File(directory, key + ".%(ext)s").getAbsolutePath();
         PyObject module = Python.getInstance().getModule("spotmusic_ytdlp");
-        String json = module.callAttr("resolve", query, outputTemplate).toJava(String.class);
+        String json = module.callAttr("resolve", title, artist, expectedDurationMs).toJava(String.class);
         JSONObject metadata = new JSONObject(json);
 
         String streamUrl = metadata.optString("streamUrl", "");
@@ -98,13 +119,13 @@ public class NativeAudioResolverPlugin extends Plugin {
             artistScore = Math.max(artistScore, 0.8);
         }
         // Allow candidate if it has reasonable similarity or is from official search
-        if (titleScore < 0.20 && artistScore < 0.15) {
+        if (titleScore < 0.40 || (!artist.isEmpty() && artistScore < 0.35)) {
             if (audioFile != null) audioFile.delete();
             return null;
         }
         if (expectedDurationMs > 60_000 && candidateDurationMs > 0) {
             double difference = Math.abs(candidateDurationMs - expectedDurationMs) / (double) expectedDurationMs;
-            if (difference > 0.65) {
+            if (difference > 0.20) {
                 if (audioFile != null) audioFile.delete();
                 return null;
             }

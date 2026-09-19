@@ -574,7 +574,7 @@ export class SettingsModal {
     const badge = document.getElementById('settings-spotify-status');
     const button = document.getElementById('btn-settings-connect-spotify');
     if (badge) {
-      badge.textContent = spotifyAuth.connected ? 'Cuenta Vinculada ✓' : 'Integrado ✓';
+      badge.textContent = spotifyAuth.connected ? 'Cuenta vinculada ✓' : 'Sin vincular';
       badge.className = 'px-2.5 py-0.5 rounded-full font-bold text-[10px] bg-sonic-green/20 text-sonic-green border border-sonic-green/30';
     }
     if (button) button.textContent = spotifyAuth.connected ? 'Desvincular Cuenta' : 'Vincular Cuenta Spotify';
