@@ -71,7 +71,7 @@ class SpotifyClient {
         return await this.fetchOfficialEntity(info, inputUrl);
       } catch (error: any) {
         if (/401/.test(error?.message || '')) this.setAccessToken('');
-        else throw error;
+        throw error;
       }
     }
 
@@ -165,6 +165,8 @@ class SpotifyClient {
       return this.spotifyApi(path, attempt + 1);
     }
     if (response.status < 200 || response.status >= 300) {
+      if (response.status === 401) throw new Error('La sesión de Spotify venció (401). Vuelve a intentar la importación para renovar el acceso.');
+      if (response.status === 403) throw new Error('Spotify rechazó el acceso (403). Si la aplicación está en modo desarrollo, el administrador debe autorizar tu cuenta en Spotify Developer. Revisa también que tengas permiso para acceder a esta playlist.');
       throw new Error(`Spotify API respondió HTTP ${response.status}`);
     }
     return typeof response.data === 'string' ? JSON.parse(response.data) : response.data;

@@ -20,6 +20,10 @@ const STATE_KEY = 'spotmusic_spotify_oauth_state';
 class SpotifyAuth {
   private initialized = false;
   private listeners = new Set<AuthListener>();
+  public lastError = '';
+  private authorization: Promise<boolean> | null = null;
+  private handlingCallback = false;
+  private completedCallback = '';
 
   public get clientId(): string {
     const configured = localStorage.getItem(CLIENT_ID_KEY)?.trim() || '';
@@ -60,6 +64,17 @@ class SpotifyAuth {
     await App.addListener('appUrlOpen', ({ url }) => {
       if (url?.startsWith(REDIRECT_URI)) void this.handleCallback(url);
     });
+    await Browser.addListener('browserFinished', () => {
+      if (this.authorization && !this.handlingCallback && !this.connected) {
+        this.lastError = 'Conexión cancelada. Vuelve a importar para iniciar sesión.';
+        this.notify();
+      }
+    });
+    const launch = await App.getLaunchUrl().catch(() => undefined);
+    if (launch?.url?.startsWith(REDIRECT_URI)) {
+      await this.handleCallback(launch.url);
+      return;
+    }
 
     const token = localStorage.getItem(ACCESS_TOKEN_KEY) || '';
     const expiresAt = Number(localStorage.getItem(EXPIRES_AT_KEY) || 0);
@@ -74,7 +89,7 @@ class SpotifyAuth {
 
   }
 
-  public async ensureAccessToken(): Promise<boolean> {
+  public async ensureAccessToken(interactive = false): Promise<boolean> {
     const expiresAt = Number(localStorage.getItem(EXPIRES_AT_KEY) || 0);
     if (spotifyClient.hasAccessToken && expiresAt > Date.now() + 30_000) return true;
     if (localStorage.getItem(REFRESH_TOKEN_KEY) && this.configured) {
@@ -85,10 +100,26 @@ class SpotifyAuth {
         this.disconnect(false);
       }
     }
-    return false;
+    if (!interactive) return false;
+    if (this.authorization) return this.authorization;
+    this.authorization = new Promise<boolean>((resolve, reject) => {
+      const finish = (error?: Error) => {
+        clearTimeout(timer);
+        unsubscribe();
+        error ? reject(error) : resolve(true);
+      };
+      const unsubscribe = this.subscribe(() => {
+        if (this.connected) finish();
+        else if (this.lastError) finish(new Error(this.lastError));
+      });
+      const timer = setTimeout(() => finish(new Error('No se completó el inicio de sesión de Spotify. Intenta vincular la cuenta de nuevo.')), 180000);
+      this.connect().catch(error => finish(error));
+    }).finally(() => { this.authorization = null; });
+    return this.authorization;
   }
 
   public async connect() {
+    this.lastError = '';
     if (!this.clientId) throw new Error('Primero guarda el Client ID de tu aplicación de Spotify.');
     const verifier = this.randomUrlSafe(64);
     const state = this.randomUrlSafe(24);
@@ -110,9 +141,12 @@ class SpotifyAuth {
   }
 
   private async handleCallback(callbackUrl: string) {
+    if (this.handlingCallback || callbackUrl === this.completedCallback) return;
+    this.handlingCallback = true;
     try { await Browser.close(); } catch {}
     try {
       const parsed = new URL(callbackUrl);
+      if (parsed.protocol !== 'spotmusic-login:' || parsed.hostname !== 'callback' || (parsed.pathname && parsed.pathname !== '/')) throw new Error('El enlace de regreso de Spotify no es válido.');
       const error = parsed.searchParams.get('error');
       if (error) throw new Error(error === 'access_denied' ? 'Conexión cancelada.' : `Spotify rechazó la conexión: ${error}`);
       const state = parsed.searchParams.get('state') || '';
@@ -129,12 +163,14 @@ class SpotifyAuth {
         code_verifier: verifier
       }));
       this.storeTokens(tokens);
+      this.completedCallback = callbackUrl;
     } catch (error) {
-      console.warn('Spotify OAuth:', error);
       this.disconnect(false);
+      this.lastError = error instanceof Error ? error.message : 'No se pudo vincular Spotify.';
     } finally {
       localStorage.removeItem(VERIFIER_KEY);
       localStorage.removeItem(STATE_KEY);
+      this.handlingCallback = false;
       this.notify();
     }
   }

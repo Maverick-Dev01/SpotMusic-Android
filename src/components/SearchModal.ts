@@ -155,7 +155,7 @@ export class SearchModal {
     }
 
     try {
-      await spotifyAuth.ensureAccessToken();
+      await spotifyAuth.ensureAccessToken(true);
       const sp = await spotifyClient.fetchSpotifyEntity(url);
       if (generation !== this.searchGeneration) return;
       this.currentSpotifyPlaylist = sp;
@@ -169,9 +169,10 @@ export class SearchModal {
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
             </div>
             <p class="text-xs text-red-300">${escapeHtml(err.message)}</p>
-            <p class="text-[11px] text-white/40">Verifica que la playlist sea pública en Spotify</p>
+            <button id="btn-retry-spotify-import" class="px-4 py-2 rounded-xl bg-white/10 text-white text-xs">Volver a intentar</button>
           </div>
         `;
+        document.getElementById('btn-retry-spotify-import')?.addEventListener('click', () => this.loadSpotifyEntity(url));
       }
     } finally {
       if (generation === this.searchGeneration) this.isSearching = false;

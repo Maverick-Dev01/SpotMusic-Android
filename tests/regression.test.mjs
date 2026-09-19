@@ -4,9 +4,10 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
 import { indexedDB } from 'fake-indexeddb';
+import { webcrypto } from 'node:crypto';
 function load(file, dependencies = {}, globals = {}) {
   const exports = {};
-  const code = ts.transpileModule(readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+  const code = ts.transpileModule(readFileSync(file, 'utf8').replace(/\bimport\.meta\b/g, '({env:{}})'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   vm.runInNewContext(code, { exports, require: key => dependencies[key] ?? {}, console, AbortSignal, URL, Date, setInterval, clearInterval, setTimeout, clearTimeout, ...globals });
   return exports;
 }
@@ -243,4 +244,56 @@ test('actual playback duration catches a preview disguised as a full-song URL', 
   engine.audio.listeners.get('loadedmetadata')();
   assert.equal(engine.isPlaying, false);
   assert.match(failure.message, /fragmento/);
+});
+
+function spotifyAuthHarness(launchUrl) {
+  const storage = new Map();
+  let token = '', open, requests = 0;
+  const opened = new Promise(resolve => { open = resolve; });
+  const { spotifyAuth } = load('src/services/spotifyAuth.ts', {
+    '@capacitor/app': { App: { addListener: async () => {}, getLaunchUrl: async () => launchUrl ? { url: launchUrl } : undefined } },
+    '@capacitor/browser': { Browser: { addListener: async () => {}, open: async ({url}) => open(url), close: async () => {} } },
+    '@capacitor/core': { CapacitorHttp: { request: async ({data}) => {
+      requests++;
+      const body = new URLSearchParams(data);
+      assert.equal(body.get('client_secret'), null);
+      assert.ok(body.get('code_verifier'));
+      return { status: 200, data: { access_token: 'test-token', refresh_token: 'test-refresh', expires_in: 3600 } };
+    } } },
+    './spotifyClient': { spotifyClient: { get hasAccessToken() { return !!token; }, setAccessToken: value => { token = value; } } }
+  }, { URLSearchParams, TextEncoder, crypto: webcrypto, btoa,
+    localStorage: { getItem: key => storage.get(key), setItem: (key,value) => storage.set(key,value), removeItem: key => storage.delete(key) }
+  });
+  return { auth: spotifyAuth, storage, opened, requests: () => requests };
+}
+
+test('mobile import waits for Spotify login and duplicate callbacks do not disconnect the account', async () => {
+  const h = spotifyAuthHarness();
+  await h.auth.initialize();
+  const pending = h.auth.ensureAccessToken(true);
+  const url = new URL(await h.opened);
+  const callback = 'spotmusic-login://callback?code=test&state=' + url.searchParams.get('state');
+  await h.auth.handleCallback(callback);
+  assert.equal(await pending, true);
+  await h.auth.handleCallback(callback);
+  assert.equal(h.auth.connected, true);
+  assert.equal(h.requests(), 1);
+});
+
+test('mobile cold-start callback restores Spotify login', async () => {
+  const h = spotifyAuthHarness('spotmusic-login://callback?code=test&state=expected');
+  h.storage.set('spotmusic_spotify_oauth_state', 'expected');
+  h.storage.set('spotmusic_spotify_pkce_verifier', 'verifier');
+  await h.auth.initialize();
+  assert.equal(h.auth.connected, true);
+});
+
+test('Spotify access denial is visible and never replaced by a partial public import', async () => {
+  let calls = 0;
+  const { spotifyClient } = load('src/services/spotifyClient.ts', {
+    '@capacitor/core': { CapacitorHttp: { get: async () => { calls++; return { status: 403 }; } } }
+  }, { sessionStorage: { getItem: () => null, setItem() {}, removeItem() {} } });
+  spotifyClient.setAccessToken('user-token');
+  await assert.rejects(spotifyClient.fetchSpotifyEntity('https://open.spotify.com/playlist/1234567890123456789012'), /autorizar tu cuenta/);
+  assert.equal(calls, 1);
 });

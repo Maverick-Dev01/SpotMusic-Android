@@ -121,7 +121,7 @@ export class SettingsModal {
               </span>
               <span id="settings-spotify-status" class="px-2.5 py-0.5 rounded-full font-bold text-[10px] bg-sonic-green/20 text-sonic-green border border-sonic-green/30">Integrado ✓</span>
             </div>
-            <p class="text-[10px] leading-relaxed text-white/45">Credenciales oficiales integradas en la aplicación. Puedes vincular tu cuenta personal si deseas acceder a tus playlists privadas.</p>
+            <p id="settings-spotify-help" class="text-[10px] leading-relaxed text-white/60">Vincula tu cuenta para importar todas las páginas de las playlists a las que Spotify te permita acceder.</p>
             <button id="btn-settings-connect-spotify" class="w-full py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold text-xs active:scale-95 transition-all">Vincular Cuenta Spotify</button>
           </div>
 
@@ -571,6 +571,8 @@ export class SettingsModal {
   }
 
   private refreshSpotifyUI() {
+    const help = document.getElementById('settings-spotify-help');
+    if (help) help.textContent = spotifyAuth.lastError || (spotifyAuth.connected ? 'Cuenta vinculada. Ya puedes importar tus playlists.' : 'Vincula tu cuenta para importar todas las páginas de tus playlists accesibles.');
     const badge = document.getElementById('settings-spotify-status');
     const button = document.getElementById('btn-settings-connect-spotify');
     if (badge) {

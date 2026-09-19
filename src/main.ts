@@ -617,10 +617,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     downloadsContainer?.classList.remove('hidden');
   });
 
+  let selectingDownloads = false;
+  const selectedDownloads = new Set<string>();
+
   async function renderDownloadedTracks() {
     if (!downloadedContainer) return;
     const allTracks = await localLibrary.getAllTracks();
     const dlTracks = allTracks.filter(t => t.isLocal || !!t.localPath);
+    const availableIds = new Set(dlTracks.map(track => track.id));
+    for (const id of selectedDownloads) if (!availableIds.has(id)) selectedDownloads.delete(id);
     if (downloadedCountBadge) downloadedCountBadge.textContent = dlTracks.length.toString();
 
     if (!dlTracks.length) {
@@ -633,8 +638,20 @@ document.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
-    downloadedContainer.innerHTML = dlTracks.map((t, idx) => `
+    downloadedContainer.innerHTML = `
+      <div class="p-3 rounded-2xl bg-white/5 border border-white/10 space-y-2">
+        <div class="flex flex-wrap items-center gap-2">
+          <button id="btn-select-downloads" class="px-3 py-2 rounded-xl bg-white/10 text-white text-xs font-semibold">${selectingDownloads ? 'Cancelar selección' : 'Seleccionar canciones'}</button>
+          ${selectingDownloads ? `<span class="text-xs text-sonic-green">${selectedDownloads.size} seleccionadas</span>` : ''}
+        </div>
+        ${selectingDownloads ? `<div class="flex flex-wrap gap-2">
+          <button id="btn-select-all-downloads" class="px-3 py-2 rounded-xl bg-white/10 text-white text-xs">${selectedDownloads.size === dlTracks.length ? 'Desmarcar todas' : 'Seleccionar todas'}</button>
+          <button id="btn-remove-selected-downloads" ${!selectedDownloads.size ? 'disabled' : ''} class="px-3 py-2 rounded-xl bg-red-500/10 text-red-400 text-xs disabled:opacity-40">Eliminar de la app</button>
+          <button id="btn-delete-selected-download-files" ${!selectedDownloads.size ? 'disabled' : ''} class="px-3 py-2 rounded-xl bg-red-500/10 text-red-400 text-xs disabled:opacity-40">Borrar archivos</button>
+        </div>` : ''}
+      </div>` + dlTracks.map((t, idx) => `
       <div class="flex items-center justify-between p-3 rounded-2xl bg-obsidian-800/80 border border-white/10 hover:border-sonic-green/30 transition-all cursor-pointer group" data-dl-idx="${idx}">
+        ${selectingDownloads ? `<input type="checkbox" class="select-download-track w-5 h-5 mr-3 flex-shrink-0 accent-sonic-green" data-id="${escapeHtml(t.id)}" aria-label="Seleccionar ${escapeHtml(t.name)}" ${selectedDownloads.has(t.id) ? 'checked' : ''}>` : ''}
         <div class="flex items-center gap-3 min-w-0 flex-1">
           <div class="relative w-12 h-12 rounded-xl overflow-hidden flex-shrink-0 bg-obsidian-900 border border-white/10">
             <img src="${escapeHtml(t.cover_url || './logo.png')}" alt="Cover" class="w-full h-full object-cover" data-fallback="./logo.png" />
@@ -666,12 +683,59 @@ document.addEventListener('DOMContentLoaded', async () => {
       </div>
     `).join('');
 
+    document.getElementById('btn-select-downloads')?.addEventListener('click', () => {
+      selectingDownloads = !selectingDownloads;
+      selectedDownloads.clear();
+      renderDownloadedTracks();
+    });
+    document.getElementById('btn-select-all-downloads')?.addEventListener('click', () => {
+      if (selectedDownloads.size === dlTracks.length) selectedDownloads.clear();
+      else dlTracks.forEach(track => selectedDownloads.add(track.id));
+      renderDownloadedTracks();
+    });
+    downloadedContainer.querySelectorAll<HTMLInputElement>('.select-download-track').forEach(input => {
+      input.addEventListener('click', event => event.stopPropagation());
+      input.addEventListener('change', () => {
+        const id = input.dataset.id!;
+        input.checked ? selectedDownloads.add(id) : selectedDownloads.delete(id);
+        renderDownloadedTracks();
+      });
+    });
+    const removeSelection = async (deleteFiles: boolean) => {
+      const tracks = dlTracks.filter(track => selectedDownloads.has(track.id));
+      if (!tracks.length) return;
+      const message = deleteFiles
+        ? `¿Borrar permanentemente ${tracks.length} archivos y quitarlos de la biblioteca?`
+        : `¿Eliminar ${tracks.length} canciones de la app? Las copias exportadas al dispositivo se conservan.`;
+      if (!await appDialog.confirm(message)) return;
+      let failed = 0;
+      for (const track of tracks) {
+        try {
+          if (deleteFiles && track.localPath?.startsWith('content://')) await storagePicker.deleteFile(track.localPath);
+          else if (deleteFiles && track.localPath) await Filesystem.deleteFile({ path: track.localPath });
+          await localLibrary.deleteTrack(track.id);
+          selectedDownloads.delete(track.id);
+        } catch { failed++; }
+      }
+      await renderDownloadedTracks();
+      await refreshLibraryView();
+      if (failed) await appDialog.alert(`${failed} canciones no pudieron eliminarse. Comprueba los permisos de la carpeta.`);
+    };
+    document.getElementById('btn-remove-selected-downloads')?.addEventListener('click', () => removeSelection(false));
+    document.getElementById('btn-delete-selected-download-files')?.addEventListener('click', () => removeSelection(true));
+
     // Click track row or play button
     downloadedContainer.querySelectorAll(':scope > [data-dl-idx]').forEach(el => {
       el.addEventListener('click', (e) => {
         if ((e.target as HTMLElement).closest('.btn-del-dl') || (e.target as HTMLElement).closest('.btn-folder-dl')) return;
         const idxStr = el.getAttribute('data-dl-idx');
         const idx = idxStr !== null ? parseInt(idxStr, 10) : 0;
+        if (selectingDownloads && !(e.target as HTMLElement).closest('.btn-play-dl')) {
+          const id = dlTracks[idx].id;
+          selectedDownloads.has(id) ? selectedDownloads.delete(id) : selectedDownloads.add(id);
+          renderDownloadedTracks();
+          return;
+        }
         audioEngine.playQueue(dlTracks, idx);
         switchView('view-player');
       });
