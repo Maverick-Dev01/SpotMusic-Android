@@ -3,6 +3,30 @@ import CryptoJS from 'crypto-js';
 import { resolveNativeAudio } from './nativeAudioResolver';
 import { isFullAudio } from './audioValidation';
 
+/**
+ * Markers of a recording that is NOT the studio original. The catalogues are full
+ * of these (searching "Despacito" returns an Afro House edit, "Blinding Lights" a
+ * Nightcore one), and they are what makes a song feel like it is "missing a part":
+ * it is a different, shorter take. The check is symmetric, so asking for a remix
+ * still finds one.
+ */
+const UNWANTED_VERSION_MARKERS = [
+  'remix', 'nightcore', 'slowed', 'reverb', 'sped up', 'speed up', '8d audio', '8d',
+  'cover', 'karaoke', 'instrumental', 'acapella', 'a cappella', 'tribute',
+  'originally performed', 'made famous by', 'in the style of',
+  // "edit" is deliberately absent: "Radio Edit" is usually the standard single.
+  'live', 'extended mix', 'mix', 'mashup', 'bootleg',
+  'afro house', 'techno', 'house version', 'piano version', 'string quartet',
+  'lofi', 'lo-fi', 'bass boosted', 'reverse', '1 hour', '10 hours', 'loop',
+];
+
+// The server may have to fall back to YouTube for tracks the fast catalogues do
+// not carry, which takes several seconds. The old 3s budget aborted every one of
+// those requests before it could answer.
+const SERVER_REQUEST_TIMEOUT_MS = 12000;
+// Guard against a slow endpoint list stacking up one timeout after another.
+const SERVER_TOTAL_BUDGET_MS = 20000;
+
 export interface ResolvedAudio {
   audioUrl: string;
   durationMs: number;
@@ -118,6 +142,11 @@ class StreamResolver {
     }
   }
 
+  private upgradeJioQuality(url: string | null): string | null {
+    if (!url) return null;
+    return url.replace(/_(?:12|48|96|160)\.mp4(\b|$)/, '_320.mp4$1');
+  }
+
   private formatDuration(seconds: number): string {
     const m = Math.floor(seconds / 60);
     const s = Math.floor(seconds % 60);
@@ -154,7 +183,7 @@ class StreamResolver {
     candidate: Pick<ResolvedAudio, 'title' | 'artist' | 'durationMs'>
   ): number {
     const titleScore = this.similarity(this.cleanTitle(title), candidate.title || '');
-    const unwanted = ['remix', 'nightcore', '8d audio', 'slowed', 'reverb', 'cover', 'live', 'extended mix', '1 hour', '10 hours', 'mix'];
+    const unwanted = UNWANTED_VERSION_MARKERS;
     const titleLower = title.toLowerCase();
     const candLower = (candidate.title || '').toLowerCase();
     for (const word of unwanted) {
@@ -206,7 +235,9 @@ class StreamResolver {
       const candidates: ResolvedAudio[] = [];
       for (const item of data.results) {
         if (item.encrypted_media_url) {
-          const streamUrl = this.decryptJioMediaUrl(item.encrypted_media_url);
+          // JioSaavn hands out the 96kbps variant; the 320kbps one lives at the
+          // same path and is a straight substitution (verified ~317kbps real).
+          const streamUrl = this.upgradeJioQuality(this.decryptJioMediaUrl(item.encrypted_media_url));
           if (streamUrl) {
             const durSec = parseInt(item.duration, 10) || 180;
             const dom = new DOMParser().parseFromString(item.song || '', 'text/html');
@@ -272,25 +303,28 @@ class StreamResolver {
     return null;
   }
 
+  // Ordered by how likely each one is to answer. A stale LAN address used to sit
+  // first and burned its full 3s timeout before every single song.
   private serverEndpoints: string[] = [
-    'http://192.168.1.143:3000/api/stream',
-    'https://license-eight-ruby.vercel.app/api/stream',
     '/api/stream',
+    'https://license-eight-ruby.vercel.app/api/stream',
     'http://localhost:3000/api/stream',
     'https://license-dwtlltjib-lamb-dev.vercel.app/api/stream'
   ];
 
   public async resolveServerStream(title: string, artist: string, expectedDurationMs?: number): Promise<ResolvedAudio | null> {
     const query = `${this.cleanTitle(title)} ${artist}`.trim();
+    const deadline = Date.now() + SERVER_TOTAL_BUDGET_MS;
     for (const ep of this.serverEndpoints) {
+      if (Date.now() > deadline) break;
       try {
         const url = `${ep}?q=${encodeURIComponent(query)}&title=${encodeURIComponent(title)}&artist=${encodeURIComponent(artist)}${expectedDurationMs ? `&durationMs=${expectedDurationMs}` : ''}`;
         let data: any = null;
         if (typeof Capacitor !== 'undefined' && Capacitor.isNativePlatform?.() && Capacitor.getPlatform() === 'android') {
-          const res = await CapacitorHttp.get({ url, connectTimeout: 3000, readTimeout: 3000 });
+          const res = await CapacitorHttp.get({ url, connectTimeout: 5000, readTimeout: SERVER_REQUEST_TIMEOUT_MS });
           if (res.status === 200) data = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
         } else {
-          const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
+          const res = await fetch(url, { signal: AbortSignal.timeout(SERVER_REQUEST_TIMEOUT_MS) });
           if (res.ok) data = await res.json();
         }
         if (data && data.success && isFullAudio(data, expectedDurationMs) && data.title && data.artist) {
@@ -304,8 +338,15 @@ class StreamResolver {
             console.warn('Server stream candidate rejected due to mismatch:', data.title, data.artist, 'expected:', title, artist);
             continue;
           }
+          // A URL the server resolved from YouTube is bound to the server's IP, so
+          // playing it straight from this device would be refused. When the server
+          // offers a proxy path, stream through it instead.
+          let audioUrl = data.audioUrl;
+          if (data.proxyPath) {
+            try { audioUrl = new URL(data.proxyPath, new URL(url, location.href).origin).toString(); } catch {}
+          }
           return {
-            audioUrl: data.audioUrl,
+            audioUrl,
             durationMs: data.durationMs || 180000,
             durationStr: data.durationStr || '3:00',
             format: data.format || 'MP4 / 320kbps (Hi-Fi)',
@@ -337,35 +378,40 @@ class StreamResolver {
       return nativeAudio;
     }
 
-    // Remote resolution also supports iOS, where the Android extractor is unavailable.
-    try {
-      const serverStream = await this.resolveServerStream(cleanT, artist, expectedDurationMs);
-      if (serverStream) {
-        this.cache.set(cacheKey, serverStream);
-        return serverStream;
-      }
-    } catch (e) {
-      console.warn('Server stream resolver notice:', e);
-    }
+    // The server is the most accurate source — it can fall back to YouTube for the
+    // western catalogue that JioSaavn and SoundCloud simply do not carry — but it
+    // is also the slowest. Start it now and race the fast catalogues against it
+    // instead of waiting for one before trying the other.
+    const serverRequest = this.resolveServerStream(cleanT, artist, expectedDurationMs)
+      .catch(e => { console.warn('Server stream resolver notice:', e); return null; });
 
-    // 2. Run JioSaavn and SoundCloud in PARALLEL for sub-second resolution (on Android / native)
-    try {
-      const [jioRes, scRes] = await Promise.all([
-        this.resolveJioSaavn(cleanT, artist, expectedDurationMs).catch(() => null),
-        this.resolveSoundCloud(cleanT, artist, expectedDurationMs).catch(() => null)
-      ]);
-
+    const fastRequest = Promise.all([
+      this.resolveJioSaavn(cleanT, artist, expectedDurationMs).catch(() => null),
+      this.resolveSoundCloud(cleanT, artist, expectedDurationMs).catch(() => null)
+    ]).then(([jioRes, scRes]) => {
       const fullCandidates = [jioRes, scRes].filter((item): item is ResolvedAudio => !!item && isFullAudio(item, expectedDurationMs));
-      const best = fullCandidates.sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0))[0];
-      if (best) {
-        this.cache.set(cacheKey, best);
-        return best;
-      }
-    } catch (e) {
-      console.warn('Fast parallel stream resolution notice:', e);
+      return fullCandidates.sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0))[0] || null;
+    }).catch(e => { console.warn('Fast parallel stream resolution notice:', e); return null; });
+
+    // A confident catalogue hit plays immediately; anything less waits for the
+    // server, which is far better at telling the original from a look-alike.
+    const fast = await fastRequest;
+    if (fast && (fast.matchScore || 0) >= 0.8) {
+      this.cache.set(cacheKey, fast);
+      return fast;
     }
 
-    // 3. Match native yt-dlp runtime on Android if available
+    const serverStream = await serverRequest;
+    if (serverStream) {
+      this.cache.set(cacheKey, serverStream);
+      return serverStream;
+    }
+
+    if (fast) {
+      this.cache.set(cacheKey, fast);
+      return fast;
+    }
+
     return null;
   }
 }

@@ -106,7 +106,9 @@ export class PlaylistModal {
       if (btn) btn.innerHTML = '<span class="text-[10px] animate-pulse">Importando...</span>';
 
       try {
-        await spotifyAuth.ensureAccessToken(true);
+        // Never block the import on an OAuth round trip: reuse a linked session if
+      // there is one, otherwise fall straight through to the public reader.
+      await spotifyAuth.ensureAccessToken(false).catch(() => false);
         const sp = await spotifyClient.fetchSpotifyEntity(url.trim());
         if (!sp.tracks || sp.tracks.length === 0) {
           throw new Error('No se encontraron canciones en este enlace de Spotify.');

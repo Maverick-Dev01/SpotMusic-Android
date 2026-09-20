@@ -125,28 +125,6 @@ export class SettingsModal {
             <button id="btn-settings-connect-spotify" class="w-full py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold text-xs active:scale-95 transition-all">Vincular Cuenta Spotify</button>
           </div>
 
-          <!-- SECTION 4: SALIDA DE AUDIO -->
-          <div class="rounded-2xl bg-obsidian-900/80 border border-white/10 p-3.5 space-y-3">
-            <div>
-              <span class="font-bold text-white flex items-center gap-1.5">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18 5a9 9 0 0 1 0 14"/></svg>
-                <span>Salida de audio</span>
-              </span>
-              <p class="text-[10px] text-white/45 mt-1">Elige el perfil que corresponde al teléfono, bocina o audífonos.</p>
-            </div>
-            <select id="settings-audio-profile" class="w-full bg-obsidian-800 border border-white/10 rounded-xl px-3 py-2 text-sonic-green font-bold focus:outline-none">
-              <option value="Phone">Altavoz del teléfono</option>
-              <option value="AntiBoom">Reducir retumbo</option>
-              <option value="Speaker">Bocina externa</option>
-              <option value="Headphones">Audífonos</option>
-              <option value="Flat">Plano / sin ajuste</option>
-            </select>
-            <div class="flex items-center justify-between gap-3 pt-1">
-              <p id="settings-audio-profile-help" class="text-[10px] leading-relaxed text-white/50">Reduce los subgraves para proteger altavoces pequeños.</p>
-              <button id="btn-settings-open-eq" class="flex-shrink-0 py-1.5 px-3 rounded-xl bg-white/10 text-sonic-green font-semibold text-xs">Ajuste fino</button>
-            </div>
-          </div>
-
           <!-- SECTION 5: APARIENCIA Y TEMA -->
           <div class="rounded-2xl bg-obsidian-900/80 border border-white/10 p-3.5 space-y-3">
             <span class="font-bold text-white flex items-center gap-1.5">
@@ -244,16 +222,6 @@ export class SettingsModal {
 
     spotifyAuth.subscribe(() => this.refreshSpotifyUI());
 
-    const audioProfile = document.getElementById('settings-audio-profile') as HTMLSelectElement;
-    audioProfile?.addEventListener('change', () => {
-      audioEngine.applyPreset(audioProfile.value);
-      this.refreshAudioUI();
-    });
-    document.getElementById('btn-settings-open-eq')?.addEventListener('click', () => {
-      this.close();
-      document.dispatchEvent(new CustomEvent('spotmusic:open-equalizer'));
-    });
-    audioEngine.on('eqchange', () => this.refreshAudioUI());
 
     // Copy Device ID
     document.getElementById('btn-settings-copy-device-id')?.addEventListener('click', async () => {
@@ -550,24 +518,6 @@ export class SettingsModal {
     this.refreshLicenseUI();
     this.refreshStorageUI();
     this.refreshSpotifyUI();
-    this.refreshAudioUI();
-  }
-
-  private refreshAudioUI() {
-    const select = document.getElementById('settings-audio-profile') as HTMLSelectElement | null;
-    const help = document.getElementById('settings-audio-profile-help');
-    const knownProfile = ['Phone', 'AntiBoom', 'Speaker', 'Headphones', 'Flat'].includes(audioEngine.currentPreset)
-      ? audioEngine.currentPreset
-      : 'Flat';
-    if (select) select.value = knownProfile;
-    const messages: Record<string, string> = {
-      Phone: 'Reduce subgraves y da claridad a los altavoces pequeños.',
-      AntiBoom: 'Recorta con mayor fuerza las frecuencias que producen retumbo.',
-      Speaker: 'Balance moderado para bocinas Bluetooth o externas.',
-      Headphones: 'Respuesta equilibrada para audífonos y manos libres.',
-      Flat: 'Mantiene la respuesta original, sin realces.'
-    };
-    if (help) help.textContent = messages[knownProfile];
   }
 
   private refreshSpotifyUI() {

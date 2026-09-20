@@ -13,3 +13,6 @@ android/capacitor-cordova-android-plugins/build/
 local.properties
 .idea/
 *.iml
+
+# Build output: APKs ship through GitHub Releases, not the repo history.
+release/

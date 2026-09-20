@@ -16,6 +16,8 @@ export interface Track {
   isFavorite?: boolean;
   externalUrl?: string;
   isrc?: string;
+  // Spotify's 0-100 popularity, present only on results that came from its API.
+  popularity?: number;
 }
 
 export interface Playlist {
@@ -31,12 +33,6 @@ export interface Playlist {
 }
 
 export type RepeatMode = 'off' | 'all' | 'one';
-
-export interface EqualizerPreset {
-  name: string;
-  gains: [number, number, number, number, number]; // 60Hz, 230Hz, 910Hz, 3600Hz, 14000Hz
-  bassBoost: number; // 0 to 10
-}
 
 export interface LicenseInfo {
   valid: boolean;

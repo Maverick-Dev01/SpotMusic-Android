@@ -13,7 +13,6 @@ import { storagePicker } from './services/storagePicker';
 import { VinylDeck } from './components/VinylDeck';
 import { WaveVisualizer } from './components/WaveVisualizer';
 import { QueueDrawer } from './components/QueueDrawer';
-import { EqualizerModal } from './components/EqualizerModal';
 import { SleepTimerModal } from './components/SleepTimerModal';
 import { SearchModal } from './components/SearchModal';
 import { SettingsModal } from './components/SettingsModal';
@@ -65,12 +64,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   const vinylDeck = new VinylDeck('vinyl-deck-container');
   const waveVisualizer = new WaveVisualizer('waveform-container');
   const queueDrawer = new QueueDrawer();
-  const equalizerModal = new EqualizerModal();
   const sleepTimerModal = new SleepTimerModal();
   const searchModal = new SearchModal();
   const settingsModal = new SettingsModal();
   const playlistModal = new PlaylistModal();
-  document.addEventListener('spotmusic:open-equalizer', () => equalizerModal.open());
   setupModalBehavior();
 
   // 2. DOM Elements
@@ -85,9 +82,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const btnRepeat = document.getElementById('btn-repeat');
   const btnPlayerFavorite = document.getElementById('btn-player-favorite');
   const playerQueueCount = document.getElementById('player-queue-count');
-  const playerEqBadge = document.getElementById('player-eq-badge');
   const playerSleepBadge = document.getElementById('player-sleep-badge');
-  if (playerEqBadge) playerEqBadge.textContent = `EQ: ${audioEngine.currentPresetLabel}`;
 
   // Mini-Player DOM Elements
   const miniPlayerBar = document.getElementById('mini-player-bar');
@@ -101,7 +96,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Modals Triggers
   document.getElementById('btn-open-queue')?.addEventListener('click', () => queueDrawer.open());
-  document.getElementById('btn-open-eq')?.addEventListener('click', () => equalizerModal.open());
   document.getElementById('btn-open-sleep')?.addEventListener('click', () => sleepTimerModal.open());
   document.getElementById('btn-open-search')?.addEventListener('click', () => searchModal.open());
   document.getElementById('btn-open-settings')?.addEventListener('click', () => settingsModal.open());
@@ -275,9 +269,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (playerQueueCount) playerQueueCount.textContent = queue.length.toString();
   });
 
-  audioEngine.on('eqchange', (data: any) => {
-    if (playerEqBadge) playerEqBadge.textContent = `EQ: ${audioEngine.currentPresetLabel}`;
-  });
 
   audioEngine.on('sleeptimertick', (secRemaining: number) => {
     if (playerSleepBadge) {

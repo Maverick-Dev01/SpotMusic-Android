@@ -125,29 +125,6 @@ test('a 30-second preview is never played when full audio resolution fails', asy
   assert.equal(engine.isPlaying, false);
 });
 
-test('phone-safe audio profile is the default and device profiles persist', () => {
-  const values = new Map();
-  const engine = load('src/services/audioEngine.ts', {
-    '@capacitor/core': { Capacitor: { convertFileSrc: value => value } },
-    './localLibrary': { localLibrary: {} },
-    './streamResolver': { streamResolver: { resolveFullAudio: async () => null, clearCache() {} } }
-  }, {
-    Audio: FakeAudio,
-    navigator: {},
-    location: { href: 'https://localhost', origin: 'https://localhost' },
-    window: {},
-    localStorage: {
-      getItem: key => values.get(key) ?? null,
-      setItem: (key, value) => values.set(key, value)
-    }
-  }).audioEngine;
-  assert.equal(engine.currentPreset, 'Phone');
-  assert.equal(engine.currentBassBoost, -4);
-  engine.applyPreset('AntiBoom');
-  assert.equal(engine.currentPreset, 'AntiBoom');
-  assert.equal(engine.currentBassBoost, -6);
-  assert.equal(values.get('spotmusic_eq_preset'), 'AntiBoom');
-});
 
 test('audio matching rejects an unrelated track and prefers the exact title and artist', () => {
   const { streamResolver } = load('src/services/streamResolver.ts', {
@@ -296,4 +273,96 @@ test('Spotify access denial is visible and never replaced by a partial public im
   spotifyClient.setAccessToken('user-token');
   await assert.rejects(spotifyClient.fetchSpotifyEntity('https://open.spotify.com/playlist/1234567890123456789012'), /autorizar tu cuenta/);
   assert.equal(calls, 1);
+});
+
+test('a pasted playlist link imports without any Spotify login, through the server when CORS blocks the embed', async () => {
+  const requested = [];
+  const serverPayload = {
+    success: true, id: '1234567890123456789012', type: 'playlist', name: 'Mi Playlist',
+    description: '', cover_url: '', owner: 'Spotify', total_tracks: 2, partial: false,
+    tracks: [
+      { id: 'spotify-a', name: 'Canción A', artists: 'Artista', duration_ms: 200000, preview_url: null },
+      { id: 'spotify-b', name: 'Canción B', artists: 'Artista', duration_ms: 210000, preview_url: null }
+    ]
+  };
+  const { spotifyClient } = load('src/services/spotifyClient.ts', {
+    '@capacitor/core': {
+      Capacitor: { isNativePlatform: () => false, getPlatform: () => 'web' },
+      CapacitorHttp: { get: async () => { throw new Error('CORS'); } }
+    }
+  }, {
+    sessionStorage: { getItem: () => null, setItem() {}, removeItem() {} },
+    fetch: async (url) => {
+      requested.push(String(url));
+      // The browser cannot read open.spotify.com directly: no CORS headers.
+      // Matched on the origin, since the server URL carries the link encoded in its query.
+      if (String(url).startsWith('https://open.spotify.com')) throw new TypeError('Failed to fetch');
+      return { ok: true, json: async () => serverPayload };
+    }
+  });
+
+  const result = await spotifyClient.fetchSpotifyEntity('https://open.spotify.com/playlist/1234567890123456789012');
+  assert.equal(result.tracks.length, 2);
+  assert.equal(result.name, 'Mi Playlist');
+  // No 30 second snippet may ever reach the player.
+  assert.equal(result.tracks.some(track => track.preview_url), false);
+  assert.ok(requested.some(url => url.includes('/api/playlist')), 'debe consultar el lector del servidor');
+});
+
+test('JioSaavn streams are upgraded from the 96kbps variant to 320kbps', () => {
+  const { streamResolver } = load('src/services/streamResolver.ts', {
+    '@capacitor/core': { Capacitor: { isNativePlatform: () => false, getPlatform: () => 'web' }, CapacitorHttp: { get: async () => { throw new Error('offline'); } } },
+    'crypto-js': {},
+    './nativeAudioResolver': { resolveNativeAudio: async () => null },
+    './audioValidation': { isFullAudio: () => true }
+  }, { DOMParser: class {}, fetch: async () => { throw new Error('offline'); } });
+
+  const upgrade = url => streamResolver.upgradeJioQuality(url);
+  assert.equal(upgrade('https://aac.saavncdn.com/344/abc_96.mp4'), 'https://aac.saavncdn.com/344/abc_320.mp4');
+  assert.equal(upgrade('https://aac.saavncdn.com/344/abc_160.mp4'), 'https://aac.saavncdn.com/344/abc_320.mp4');
+  assert.equal(upgrade('https://aac.saavncdn.com/344/abc_320.mp4'), 'https://aac.saavncdn.com/344/abc_320.mp4');
+  assert.equal(upgrade(null), null);
+});
+
+test('search ranking pushes covers and alternate versions below the original', () => {
+  const { rankSearchResults } = load('src/services/searchRanking.ts');
+  const results = [
+    { name: 'Blinding Lights', artists: 'Teddy Swims' },
+    { name: 'Blinding Lights (Remix)', artists: 'The Weeknd & ROSALÍA' },
+    { name: 'Blinding Lights', artists: 'KIDZ BOP Kids' },
+    { name: 'Blinding Lights (Country Version)', artists: 'Tebey' },
+    { name: 'Blinding Lights', artists: 'The Weeknd' },
+    { name: 'Blinding Lights', artists: 'Lullapop' }
+  ];
+  const ranked = rankSearchResults('Blinding Lights', results);
+  const positionOf = artist => ranked.findIndex(track => track.artists === artist);
+  assert.ok(positionOf('The Weeknd') < positionOf('KIDZ BOP Kids'), 'el original va antes que KIDZ BOP');
+  assert.ok(positionOf('The Weeknd') < positionOf('Lullapop'), 'el original va antes que la version de cuna');
+  assert.ok(positionOf('The Weeknd') < positionOf('Tebey'), 'el original va antes que la version country');
+  assert.ok(positionOf('The Weeknd') < positionOf('The Weeknd & ROSALÍA'), 'el original va antes que el remix');
+
+  // Asking for a remix must still surface remixes.
+  const remixFirst = rankSearchResults('Blinding Lights Remix', results);
+  assert.match(remixFirst[0].name, /Remix/);
+});
+
+test('Spotify popularity outranks an identically titled cover with no textual marker', () => {
+  const { rankSearchResults } = load('src/services/searchRanking.ts');
+  // Neither title nor artist reveals which one is the original: only popularity does.
+  const ranked = rankSearchResults('Blinding Lights', [
+    { name: 'Blinding Lights', artists: 'Teddy Swims', popularity: 41 },
+    { name: 'Blinding Lights', artists: 'All Time Low', popularity: 22 },
+    { name: 'Blinding Lights', artists: 'The Weeknd', popularity: 93 }
+  ]);
+  assert.equal(ranked[0].artists, 'The Weeknd');
+  assert.equal(ranked[2].artists, 'All Time Low');
+});
+
+test('results without popularity still rank by the text heuristics', () => {
+  const { rankSearchResults } = load('src/services/searchRanking.ts');
+  const ranked = rankSearchResults('Blinding Lights', [
+    { name: 'Blinding Lights', artists: 'KIDZ BOP Kids' },
+    { name: 'Blinding Lights', artists: 'The Weeknd' }
+  ]);
+  assert.equal(ranked[0].artists, 'The Weeknd');
 });

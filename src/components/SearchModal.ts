@@ -155,7 +155,9 @@ export class SearchModal {
     }
 
     try {
-      await spotifyAuth.ensureAccessToken(true);
+      // Never block the import on an OAuth round trip: reuse a linked session if
+      // there is one, otherwise fall straight through to the public reader.
+      await spotifyAuth.ensureAccessToken(false).catch(() => false);
       const sp = await spotifyClient.fetchSpotifyEntity(url);
       if (generation !== this.searchGeneration) return;
       this.currentSpotifyPlaylist = sp;

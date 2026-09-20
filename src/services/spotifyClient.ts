@@ -1,6 +1,14 @@
-import { CapacitorHttp } from '@capacitor/core';
+import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import { Track, Playlist } from '../types';
 import { rankSearchResults } from './searchRanking';
+
+// KeyForge reads the Spotify embed server side and returns it with CORS, which is
+// the only way a browser build can import a playlist.
+const PLAYLIST_ENDPOINTS = [
+  '/api/playlist',
+  'https://license-eight-ruby.vercel.app/api/playlist',
+  'http://localhost:3000/api/playlist',
+];
 
 export interface SearchResults {
   tracks: Track[];
@@ -66,15 +74,65 @@ class SpotifyClient {
       throw new Error('El enlace no es válido. Ingresa un enlace de Spotify (ej: https://open.spotify.com/playlist/...)');
     }
 
+    // A linked account unlocks every page of the playlist, but it is an upgrade,
+    // never a requirement: without it the public embed still returns the list.
     if (this.accessToken) {
       try {
         return await this.fetchOfficialEntity(info, inputUrl);
       } catch (error: any) {
-        if (/401/.test(error?.message || '')) this.setAccessToken('');
-        throw error;
+        const message = error?.message || '';
+        // An explicit denial has to stay visible: silently serving the partial
+        // public view instead would hide that the account cannot see this list.
+        if (/401|403/.test(message)) {
+          if (/401/.test(message)) this.setAccessToken('');
+          throw error;
+        }
+        console.warn('Spotify API import failed, falling back to the public reader:', message);
       }
     }
 
+    try {
+      return await this.fetchEmbedEntity(info);
+    } catch (embedError: any) {
+      // Browsers (the iOS PWA, any web build) cannot read open.spotify.com
+      // directly because it sends no CORS headers. KeyForge reads it for them.
+      const viaServer = await this.fetchEntityFromServer(inputUrl);
+      if (viaServer) return viaServer;
+      throw embedError;
+    }
+  }
+
+  private async fetchEntityFromServer(inputUrl: string): Promise<SpotifyPlaylistResult | null> {
+    for (const endpoint of PLAYLIST_ENDPOINTS) {
+      try {
+        const url = `${endpoint}?url=${encodeURIComponent(inputUrl)}`;
+        let data: any = null;
+        if (Capacitor?.isNativePlatform?.() && Capacitor.getPlatform() === 'android') {
+          const res = await CapacitorHttp.get({ url, connectTimeout: 15000, readTimeout: 20000 });
+          if (res.status === 200) data = typeof res.data === 'string' ? JSON.parse(res.data) : res.data;
+        } else {
+          const res = await fetch(url, { signal: AbortSignal.timeout(20000) });
+          if (res.ok) data = await res.json();
+        }
+        if (data?.success && Array.isArray(data.tracks) && data.tracks.length) {
+          return {
+            id: data.id,
+            type: data.type,
+            name: data.name,
+            description: data.description || '',
+            cover_url: data.cover_url || '',
+            owner: data.owner || 'Spotify',
+            total_tracks: Number(data.total_tracks) || data.tracks.length,
+            tracks: data.tracks as Track[],
+            partial: !!data.partial,
+          };
+        }
+      } catch {}
+    }
+    return null;
+  }
+
+  private async fetchEmbedEntity(info: { type: 'playlist' | 'album' | 'track'; id: string }): Promise<SpotifyPlaylistResult> {
     const embedUrl = `https://open.spotify.com/embed/${info.type}/${info.id}`;
     let html = '';
 
@@ -188,7 +246,8 @@ class SpotifyClient {
       audio_url: undefined,
       format: 'Audio Completo',
       externalUrl: item.external_urls?.spotify,
-      isrc: item.external_ids?.isrc
+      isrc: item.external_ids?.isrc,
+      popularity: typeof item.popularity === 'number' ? item.popularity : undefined
     };
   }
 
@@ -347,7 +406,10 @@ class SpotifyClient {
               duration_str: `${mins}:${secs.toString().padStart(2, '0')}`,
               cover_url: t.album?.images?.[0]?.url || null,
               preview_url: null,
-              format: 'MP3'
+              format: 'MP3',
+              // The signal that tells the studio original from the covers that
+              // share its exact title; nothing else in the payload reveals it.
+              popularity: typeof t.popularity === 'number' ? t.popularity : undefined
             };
           });
 
