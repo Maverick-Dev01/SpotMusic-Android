@@ -1,5 +1,14 @@
 apply plugin: 'com.android.application'
 
+// Stable release signing: read the keystore from keystore.properties (untracked).
+// Every release built from this keystore can update every other in place; the
+// debug keystore that signed 1.0.x could not, since it differs per machine.
+def keystorePropsFile = rootProject.file('keystore.properties')
+def keystoreProps = new Properties()
+if (keystorePropsFile.exists()) {
+    keystoreProps.load(new FileInputStream(keystorePropsFile))
+}
+
 android {
     namespace "com.spotmusic.app"
     compileSdk rootProject.ext.compileSdkVersion
@@ -7,8 +16,8 @@ android {
         applicationId "com.spotmusic.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 23
-        versionName "1.0.23"
+        versionCode 24
+        versionName "1.0.24"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,11 +25,21 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (keystorePropsFile.exists()) {
+                storeFile file(keystoreProps['storeFile'])
+                storePassword keystoreProps['storePassword']
+                keyAlias keystoreProps['keyAlias']
+                keyPassword keystoreProps['keyPassword']
+            }
+        }
+    }
     buildTypes {
         release {
-            // Preserve the certificate used by published 1.0.x APKs for in-place updates.
-            // This release build is not debuggable; migrate signing only with an upgrade plan.
-            signingConfig signingConfigs.debug
+            // Use the stable release keystore when configured; fall back to debug
+            // only on machines without keystore.properties (never for distribution).
+            signingConfig keystorePropsFile.exists() ? signingConfigs.release : signingConfigs.debug
             debuggable false
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'

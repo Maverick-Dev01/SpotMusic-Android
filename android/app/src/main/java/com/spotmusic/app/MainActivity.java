@@ -182,7 +182,7 @@ public class MainActivity extends BridgeActivity {
                 android.content.pm.PackageInfo archive = pm.getPackageArchiveInfo(file.getAbsolutePath(), android.content.pm.PackageManager.GET_SIGNATURES);
                 android.content.pm.PackageInfo installed = pm.getPackageInfo(getContext().getPackageName(), android.content.pm.PackageManager.GET_SIGNATURES);
                 if (archive == null || !installed.packageName.equals(archive.packageName)) throw new Exception("APK inválido o de otra aplicación");
-                if (!java.util.Arrays.equals(installed.signatures, archive.signatures)) throw new Exception("La firma del APK no coincide con la aplicación instalada");
+                if (!java.util.Arrays.equals(installed.signatures, archive.signatures)) throw new Exception("Esta versión cambió su firma de seguridad. Para actualizar, desinstala SpotMusic y vuelve a instalar la nueva versión desde la página de descargas. Tus descargas locales no se pierden.");
                 long nextVersion = Build.VERSION.SDK_INT >= 28 ? archive.getLongVersionCode() : archive.versionCode;
                 long currentVersion = Build.VERSION.SDK_INT >= 28 ? installed.getLongVersionCode() : installed.versionCode;
                 if (nextVersion <= currentVersion) throw new Exception("El APK debe tener un versionCode mayor que la versión instalada");

@@ -91,8 +91,18 @@ export class UpdatesModal {
         if (statusMsg) statusMsg.textContent = result.needsPermission ? 'Permite instalar apps en Ajustes y vuelve a pulsar Instalar.' : 'Instalador solicitado. Confirma la instalación en Android.';
         actionBtn.textContent = 'Instalar';
       } catch (err: any) {
-        await appDialog.alert('Error en la actualización: ' + (err.message || err));
-        if (statusMsg) statusMsg.textContent = 'Fallo en la descarga. Puedes intentar nuevamente.';
+        const message = err?.message || String(err);
+        // A signature change cannot be installed in place; guide the user to the
+        // manual reinstall and open the download page instead of a dead end.
+        if (/firma|signature/i.test(message)) {
+          if (statusMsg) statusMsg.textContent = 'Esta actualización requiere reinstalar la app.';
+          if (await appDialog.confirm(message + '\n\n¿Abrir la página de descargas ahora?')) {
+            window.open(`https://github.com/Maverick-Dev01/SpotMusic-Android/releases/latest`, '_blank');
+          }
+        } else {
+          await appDialog.alert('Error en la actualización: ' + message);
+          if (statusMsg) statusMsg.textContent = 'Fallo en la descarga. Puedes intentar nuevamente.';
+        }
       } finally {
         this.isUpdating = false;
         if (actionBtn) actionBtn.disabled = false;
